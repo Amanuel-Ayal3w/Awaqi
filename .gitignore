@@ -206,35 +206,39 @@ marimo/_static/
 marimo/_lsp/
 __marimo__/
 
-# Next.js
+# Node.js (Next.js & Nest.js)
 # Dependencies
 node_modules/
 /.pnp
 .pnp.js
 .yarn/install-state.gz
 
-# Testing
-/coverage
-
-# Next.js build output
+# Build output
+/dist
+/build
 .next/
 out/
 
-# Production build files
-/build
+# Testing
+/coverage
+/.nyc_output
 
-# Misc
-.DS_Store
-*.pem
-
-# Debug logs
+# Logs
+logs
 npm-debug.log*
+pnpm-debug.log*
 yarn-debug.log*
 yarn-error.log*
+lerna-debug.log*
 
 # Local env files
 .env*.local
 
+# OS
+.DS_Store
+*.pem
+
+# Next.js specific
 # Vercel
 .vercel
 
@@ -242,28 +246,7 @@ yarn-error.log*
 *.tsbuildinfo
 next-env.d.ts
 
-# Nest.js
-# Compiled output
-/dist
-/node_modules
-/build
-
-# Logs
-logs
-*.log
-npm-debug.log*
-pnpm-debug.log*
-yarn-debug.log*
-yarn-error.log*
-lerna-debug.log*
-
-# OS
-.DS_Store
-
-# Tests
-/coverage
-/.nyc_output
-
+# Nest.js specific
 # IDEs and editors
 /.idea
 .project
