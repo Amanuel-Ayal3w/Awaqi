@@ -1,0 +1,93 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    /* Zinc/Slate 50-950 Scale for Premium Feel */
+    --background: 0 0% 100%;
+    /* Pure white for clean light mode, or use 0 0% 98% for soft */
+    --foreground: 240 10% 3.9%;
+    /* Zinc 950 */
+    --card: 0 0% 100%;
+    --card-foreground: 240 10% 3.9%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 240 10% 3.9%;
+    --primary: 240 5.9% 10%;
+    /* Zinc 900 */
+    --primary-foreground: 0 0% 98%;
+    /* Zinc 50 */
+    --secondary: 240 4.8% 95.9%;
+    /* Zinc 100 */
+    --secondary-foreground: 240 5.9% 10%;
+    --muted: 240 4.8% 95.9%;
+    /* Zinc 100 */
+    --muted-foreground: 240 3.8% 46.1%;
+    /* Zinc 500 */
+    --accent: 240 4.8% 95.9%;
+    /* Zinc 100 */
+    --accent-foreground: 240 5.9% 10%;
+    --destructive: 0 84.2% 60.2%;
+    --destructive-foreground: 0 0% 98%;
+    --border: 240 5.9% 90%;
+    /* Zinc 200 */
+    --input: 240 5.9% 90%;
+    --ring: 240 5.9% 10%;
+    --radius: 0.5rem;
+  }
+
+  .dark {
+    /* Atmos-style Dark Mode: No Pure Black */
+    --background: 240 10% 3.9%;
+    /* Zinc 950 - Deep rich dark */
+    --foreground: 0 0% 98%;
+    /* Zinc 50 */
+    --card: 240 10% 3.9%;
+    /* Blend with background or slight lift 240 3.7% 15.9% (Zinc 900) */
+    --card-foreground: 0 0% 98%;
+    --popover: 240 10% 3.9%;
+    --popover-foreground: 0 0% 98%;
+    --primary: 0 0% 98%;
+    /* White Primary in Dark */
+    --primary-foreground: 240 5.9% 10%;
+    --secondary: 240 3.7% 15.9%;
+    /* Zinc 800 */
+    --secondary-foreground: 0 0% 98%;
+    --muted: 240 3.7% 15.9%;
+    /* Zinc 800 (Sidebar bg etc) */
+    --muted-foreground: 240 5% 64.9%;
+    /* Zinc 400 */
+    --accent: 240 3.7% 15.9%;
+    /* Zinc 800 */
+    --accent-foreground: 0 0% 98%;
+    --destructive: 0 62.8% 30.6%;
+    --destructive-foreground: 0 0% 98%;
+    --border: 240 3.7% 15.9%;
+    /* Zinc 800 */
+    --input: 240 3.7% 15.9%;
+    --ring: 240 4.9% 83.9%;
+    /* Zinc 300 */
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply bg-background text-foreground;
+  }
+}
+
+/* Ethiopic Font Support handled via next/font/google in layout.tsx */
+
+/* Apply Ethiopic font to Amharic text */
+html[lang="am"] {
+  font-family: var(--font-noto-sans-ethiopic), system-ui, sans-serif;
+}
+
+/* Ensure LTR direction for both languages */
+html {
+  direction: ltr;
+}

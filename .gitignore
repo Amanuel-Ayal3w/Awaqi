@@ -262,3 +262,7 @@ next-env.d.ts
 !.vscode/tasks.json
 !.vscode/launch.json
 !.vscode/extensions.json
+
+# Documentation
+G13 SRS Suport Bot AI.docx.md
+G13 SDS Support Bot AI.docx.md
