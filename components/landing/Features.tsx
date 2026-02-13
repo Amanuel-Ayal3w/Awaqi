@@ -14,12 +14,12 @@ export function Features() {
             description: t('feature1Desc')
         },
         {
-            icon: <Globe className="h-10 w-10 text-blue-500" />,
+            icon: <Globe className="h-10 w-10 text-primary" />,
             title: t('feature2Title'),
             description: t('feature2Desc')
         },
         {
-            icon: <ShieldCheck className="h-10 w-10 text-green-500" />,
+            icon: <ShieldCheck className="h-10 w-10 text-primary" />,
             title: t('feature3Title'),
             description: t('feature3Desc')
         }
