@@ -29,8 +29,7 @@ This repository hosts the **Ethio-Revenue-Bot**, an AI-powered tax support assis
 │   └── workflows/               # Automated testing & deployment pipelines
 │
 ├── README.md                    # Project overview & setup instructions
-├── G13 SRS Suport Bot AI.docx.md   # Requirements documentation
-└── G13 SDS Support Bot AI.docx.md   # Technical design documentation
+
 ```
 
 ## Getting Started
