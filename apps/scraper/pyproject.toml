@@ -1,0 +1,17 @@
+[project]
+name = "scraper"
+version = "0.1.0"
+description = "Web scraper service for Awaqi"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "scrapy",
+    "beautifulsoup4",
+    "requests",
+    "database",
+    "utils"
+]
+
+[tool.uv.sources]
+database = { path = "../../packages/database", editable = true }
+utils = { path = "../../packages/utils", editable = true }

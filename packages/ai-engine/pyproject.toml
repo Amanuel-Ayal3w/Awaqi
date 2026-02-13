@@ -1,0 +1,18 @@
+[project]
+name = "ai-engine"
+version = "0.1.0"
+description = "Core AI logic for Awaqi"
+requires-python = ">=3.11"
+dependencies = [
+    "langchain",
+    "openai",
+    "chromadb",
+    "nlu",
+    "database",
+    "utils"
+]
+
+[tool.uv.sources]
+nlu = { path = "../nlu", editable = true }
+database = { path = "../database", editable = true }
+utils = { path = "../utils", editable = true }

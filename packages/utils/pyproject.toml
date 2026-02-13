@@ -1,0 +1,6 @@
+[project]
+name = "utils"
+version = "0.1.0"
+description = "Shared utilities"
+dependencies = []
+requires-python = ">=3.11"

@@ -1,44 +1,63 @@
-# Awaqi 
-This project is a monorepo that contains the following applications:
+# Awaqi Monorepo
+
+This repository hosts the **Ethio-Revenue-Bot**, an AI-powered tax support assistant for the Ethiopian Ministry of Revenue. It is structured as a monorepo containing independent services (Apps) and shared internal libraries (Packages).
 
 ## Directory Structure
 
-- **`apps/web`**: The Frontend application built with Next.js.
-- **`apps/api`**: The Backend API service built with Python and FastAPI.
-- **`apps/ai-engine`**: The AI Logic service (RAG, LLM interactions) built with Python.
-
-## How to Run
-
-Each application runs independently. You can open separate terminals to run them.
-
-### 1. Frontend (Next.js)
-
-To run the web application:
-
-```bash
-cd apps/web
-npm install  # Install dependencies (only first time)
-npm run dev
+```
+/ethio-revenue-bot (Monorepo Root)
+├── apps/                        # Independent Service Entry Points
+│   ├── api/                     # Web Backend Gateway (FastAPI)
+│   ├── web/                     # Next.js Frontend (shadcn/ui Monochrome)
+│   ├── telegram-bot/            # Telegram Service (@ERATaxBot)
+│   └── scraper/                 # Automated Knowledge Ingestor (mor.gov.et)
+│
+├── packages/                    # Shared Internal Libraries (The "Brains")
+│   ├── ai-engine/               # Core RAG, Hybrid Search & Confidence Logic
+│   ├── database/                # Shared PostgreSQL + pgvector Schemas
+│   ├── nlu/                     # Shared Intent & Language Detection Logic
+│   └── utils/                   # Amharic Unicode & Logging Utilities
+│
+├── docker/                      # Deployment & Orchestration
+│   ├── api.Dockerfile           # For the Web Backend
+│   ├── web.Dockerfile           # For the Next.js Frontend
+│   ├── bot.Dockerfile           # For the Telegram Service
+│   ├── scraper.Dockerfile       # For the Ingestion Background Worker
+│   └── docker-compose.yml       # Orchestrates all services + DB + Redis
+│
+├── .github/                     # Change Management & CI/CD
+│   └── workflows/               # Automated testing & deployment pipelines
+│
+├── README.md                    # Project overview & setup instructions
+├── G13 SRS Suport Bot AI.docx.md   # Requirements documentation
+└── G13 SDS Support Bot AI.docx.md   # Technical design documentation
 ```
 
-The app will be available at `http://localhost:3000`.
+## Getting Started
 
-### 2. Backend API (FastAPI)
+### Prerequisites
+- Docker & Docker Compose
+- Python 3.11+ (for local development)
+- Node.js 18+ (for frontend development)
 
-To run the backend service:
+### Running with Docker (Recommended)
 
-**Prerequisite**: Install `uv` (Universal Python Project Manager).
+To spin up the entire system (Database, API, Frontend, Bot, Scraper):
 
 ```bash
-cd apps/api
-uv sync      # Install Python dependencies
-uv run uvicorn main:app --reload
+docker-compose -f docker/docker-compose.yml up --build
 ```
 
-The API will be available at `http://localhost:8000`.
-- Health Check: `http://localhost:8000/health`
-- Swagger Docs: `http://localhost:8000/docs`
+- **Frontend**: http://localhost:3000
+- **API**: http://localhost:8000/docs
+- **Database**: localhost:5432
 
-### 3. AI Engine
+### Local Development
 
-(Instructions TBD as this service is developed, currently a placeholder).
+#### Apps
+Each app in `apps/` is a standalone service. Refer to their individual READMEs for specific setup:
+- [Web Frontend](apps/web/README.md)
+- [Backend API](apps/api/README.md)
+
+#### Packages
+Shared logic resides in `packages/`. These are installed into the apps as dependencies.

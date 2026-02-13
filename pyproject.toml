@@ -1,0 +1,17 @@
+[project]
+name = "awaqi-monorepo"
+version = "0.1.0"
+description = "Awaqi Monorepo"
+requires-python = ">=3.11"
+dependencies = []
+
+[tool.uv.workspace]
+members = [
+    "apps/api",
+    "apps/scraper",
+    "apps/telegram-bot",
+    "packages/ai-engine",
+    "packages/database",
+    "packages/nlu",
+    "packages/utils"
+]
