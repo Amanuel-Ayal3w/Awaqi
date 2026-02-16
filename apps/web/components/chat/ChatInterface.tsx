@@ -38,10 +38,12 @@ export function ChatInterface() {
     };
 
     return (
-        <div className="flex flex-col h-full max-w-3xl mx-auto w-full">
-            <MessageList messages={messages} isLoading={isLoading} />
-            <div className="p-4 pb-6">
-                <ChatInput onSend={handleSendMessage} disabled={isLoading} />
+        <div className="flex flex-col h-full w-full bg-background/50">
+            <div className="flex-1 w-full max-w-3xl mx-auto flex flex-col h-full overflow-hidden">
+                <MessageList messages={messages} isLoading={isLoading} />
+                <div className="p-4 pb-6 w-full">
+                    <ChatInput onSend={handleSendMessage} disabled={isLoading} />
+                </div>
             </div>
         </div>
     );
