@@ -27,7 +27,7 @@ export function MessageList({ messages, isLoading }: MessageListProps) {
                 <div className="bg-primary/5 p-4 rounded-full mb-4">
                     <Sparkles className="w-8 h-8 text-primary" />
                 </div>
-                <h2 className="text-xl font-semibold mb-2 text-foreground tracking-tight">Revenue Support Bot</h2>
+                <h2 className="text-xl font-semibold mb-2 text-foreground tracking-tight">Awaqi</h2>
                 <p className="max-w-sm text-sm">{t('placeholder')}</p>
             </div>
         );

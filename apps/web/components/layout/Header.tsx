@@ -43,7 +43,10 @@ export function Header() {
                     <Menu className="h-5 w-5" />
                 </Button>
 
-                <h1 className="text-lg font-semibold text-foreground hidden md:block">{t('appName')}</h1>
+                <div className="hidden md:flex items-center gap-2">
+                    <div className="h-8 w-8 rounded bg-primary flex items-center justify-center text-primary-foreground font-bold">A</div>
+                    <span className="text-xl font-bold tracking-tight">Awaqi</span>
+                </div>
             </div>
 
             {/* Right Actions */}

@@ -26,19 +26,28 @@ export function Navbar() {
     };
 
     return (
-        <header className="fixed top-0 left-0 right-0 z-50 flex justify-between items-center px-6 py-4 bg-background/50 backdrop-blur-md border-b border-white/5 supports-[backdrop-filter]:bg-background/20">
+        <header className="fixed top-0 left-0 right-0 z-50 flex justify-between items-center px-6 py-4 border-b border-white/5 bg-background/60 backdrop-blur-xl supports-[backdrop-filter]:bg-background/20">
             {/* Logo area */}
             <div className="flex items-center gap-2">
-                <div className="h-8 w-8 rounded bg-primary flex items-center justify-center text-primary-foreground font-bold">A</div>
-                <span className="text-lg font-bold tracking-tight">{t('appName')}</span>
+                <div className="h-8 w-8 rounded bg-primary flex items-center justify-center text-primary-foreground font-bold shadow-[0_0_15px_rgba(255,255,255,0.3)]">A</div>
+                <span className="text-xl font-bold tracking-tight">Awaqi</span>
             </div>
+
+            {/* Center Navigation (Optional - Linear style often has this) */}
+            <nav className="hidden md:flex items-center gap-6 text-sm font-medium text-muted-foreground">
+                <Link href="#" className="hover:text-foreground transition-colors">Features</Link>
+                <Link href="#" className="hover:text-foreground transition-colors">Method</Link>
+                <Link href="#" className="hover:text-foreground transition-colors">Customers</Link>
+                <Link href="#" className="hover:text-foreground transition-colors">Changelog</Link>
+                <Link href="#" className="hover:text-foreground transition-colors">Pricing</Link>
+            </nav>
 
             {/* Right Actions */}
             <div className="flex items-center gap-4">
                 {/* Language Toggle */}
                 <DropdownMenu>
                     <DropdownMenuTrigger asChild>
-                        <Button variant="ghost" size="icon" aria-label="Change language">
+                        <Button variant="ghost" size="icon" aria-label="Change language" className="text-muted-foreground hover:text-foreground">
                             <Globe className="h-[1.2rem] w-[1.2rem]" />
                         </Button>
                     </DropdownMenuTrigger>
@@ -58,11 +67,11 @@ export function Navbar() {
                     </DropdownMenuContent>
                 </DropdownMenu>
 
-                {/* Theme Toggle */}
+                {/* Theme Toggle - Removed to enforce dark mode vibe or keep if needed, keeping for now */}
                 <ThemeToggle />
 
                 {/* Login Button */}
-                <Button asChild size="sm" className="hidden sm:flex rounded-full px-6">
+                <Button asChild size="sm" className="hidden sm:flex rounded-full px-6 bg-foreground/5 hover:bg-foreground/10 text-foreground border border-foreground/10 dark:bg-white/10 dark:text-white dark:border-white/5 backdrop-blur-sm transition-all">
                     <Link href="/login">
                         {authT('signIn')}
                     </Link>

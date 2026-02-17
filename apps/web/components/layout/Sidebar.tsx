@@ -145,8 +145,8 @@ export function Sidebar() {
                 <SheetContent side="left" className="w-72 p-0">
                     <div className="h-full bg-background">
                         <div className="p-4 border-b flex items-center">
-                            <div className="h-8 w-8 rounded bg-primary mr-3 flex items-center justify-center text-primary-foreground font-bold">E</div>
-                            <span className="font-bold text-lg">{t('appName')}</span>
+                            <div className="h-8 w-8 rounded bg-primary mr-3 flex items-center justify-center text-primary-foreground font-bold">A</div>
+                            <span className="font-bold text-lg">Awaqi</span>
                         </div>
                         {/* Mobile always expanded */}
                         <SidebarContent isCollapsed={false} isMobile={true} />
