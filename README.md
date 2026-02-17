@@ -1,4 +1,4 @@
-# Awaqi Monorepo
+# Awaqi 
 
 This repository hosts the **Ethio-Revenue-Bot**, an AI-powered tax support assistant for the Ethiopian Ministry of Revenue. It is structured as a monorepo containing independent services (Apps) and shared internal libraries (Packages).
 
