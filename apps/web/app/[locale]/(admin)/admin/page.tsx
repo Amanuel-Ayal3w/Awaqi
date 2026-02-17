@@ -1,5 +1,6 @@
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { FileText, Database, Users, Activity } from "lucide-react"
+import { OverviewChart } from "@/components/admin/OverviewChart"
 
 export default function AdminDashboard() {
     return (
@@ -69,9 +70,8 @@ export default function AdminDashboard() {
                     </CardHeader>
                     <CardContent className="pl-2">
                         {/* Chart will go here */}
-                        <div className="h-[240px] flex items-center justify-center border-2 border-dashed rounded-md text-muted-foreground">
-                            Chart Component Placeholder
-                        </div>
+                        {/* Chart will go here */}
+                        <OverviewChart />
                     </CardContent>
                 </Card>
                 <Card className="col-span-3">

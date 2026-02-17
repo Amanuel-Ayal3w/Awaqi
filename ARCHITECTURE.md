@@ -1,4 +1,4 @@
-# Awaqi System Architecture
+\# Awaqi System Architecture
 
 ## Overview
 Awaqi is an AI-powered Support Bot for the Ethiopian Revenue Authority, designed to enhance information desk services for taxpayers and business owners. The system uses Retrieval Augmented Generation (RAG) to provide accurate, cited responses based on official regulatory documents.
