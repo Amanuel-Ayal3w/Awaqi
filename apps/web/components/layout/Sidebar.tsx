@@ -81,7 +81,7 @@ export function Sidebar() {
                                 className="w-full justify-start h-auto py-2 px-3 text-sm font-normal text-muted-foreground hover:text-foreground"
                                 asChild
                             >
-                                <Link href={`/${locale}/history/${item.id}`}>
+                                <Link href={`/${locale}/chat/history/${item.id}`}>
                                     <MessageSquare className="h-4 w-4 mr-2 shrink-0" />
                                     <span className="truncate text-left">{item.title}</span>
                                 </Link>
@@ -92,7 +92,7 @@ export function Sidebar() {
                             className="w-full justify-start h-auto py-2 px-3 text-sm font-normal text-muted-foreground hover:text-foreground mt-2"
                             asChild
                         >
-                            <Link href={`/${locale}/history`}>
+                            <Link href={`/${locale}/chat/history`}>
                                 <History className="h-4 w-4 mr-2 shrink-0" />
                                 <span className="truncate">{t('viewAllHistory')}</span>
                             </Link>
@@ -108,12 +108,12 @@ export function Sidebar() {
                     className={cn(
                         "justify-start text-muted-foreground hover:text-foreground transition-all duration-200",
                         isCollapsed ? "w-10 h-10 p-0 justify-center" : "w-full",
-                        pathname.startsWith(`/${locale}/dashboard/settings`) && "bg-secondary text-foreground"
+                        pathname.startsWith(`/${locale}/chat/settings`) && "bg-secondary text-foreground"
                     )}
                     title={t('settings')}
                     asChild
                 >
-                    <Link href={`/${locale}/dashboard/settings`}>
+                    <Link href={`/${locale}/chat/settings`}>
                         <Settings className={cn("h-5 w-5", !isCollapsed && "mr-3")} />
                         {!isCollapsed && t('settings')}
                     </Link>

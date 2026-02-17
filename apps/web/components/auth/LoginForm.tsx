@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState } from 'react';
-import { useTranslations } from 'next-intl';
+import { useTranslations, useLocale } from 'next-intl';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -12,6 +12,7 @@ import { useRouter } from 'next/navigation';
 
 export function LoginForm() {
     const t = useTranslations('auth');
+    const locale = useLocale();
     const router = useRouter();
     const [isLogin, setIsLogin] = useState(true);
     const [isLoading, setIsLoading] = useState(false);
@@ -25,7 +26,7 @@ export function LoginForm() {
         // Mock authentication
         setTimeout(() => {
             setIsLoading(false);
-            router.push('/');
+            router.push(`/${locale}/chat`);
         }, 1500);
     };
 
