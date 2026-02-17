@@ -10,4 +10,4 @@ dependencies = [
 ]
 
 [tool.uv.sources]
-utils = { path = "../utils", editable = true }
+utils = { workspace = true }

@@ -13,5 +13,5 @@ dependencies = [
 ]
 
 [tool.uv.sources]
-database = { path = "../../packages/database", editable = true }
-utils = { path = "../../packages/utils", editable = true }
+database = { workspace = true }
+utils = { workspace = true }

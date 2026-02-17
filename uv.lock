@@ -22,18 +22,24 @@ members = [
 [[package]]
 name = "ai-engine"
 version = "0.1.0"
-source = { virtual = "packages/ai-engine" }
+source = { editable = "packages/ai-engine" }
 dependencies = [
     { name = "chromadb" },
+    { name = "database" },
     { name = "langchain" },
+    { name = "nlu" },
     { name = "openai" },
+    { name = "utils" },
 ]
 
 [package.metadata]
 requires-dist = [
     { name = "chromadb" },
+    { name = "database", editable = "packages/database" },
     { name = "langchain" },
+    { name = "nlu", editable = "packages/nlu" },
     { name = "openai" },
+    { name = "utils", editable = "packages/utils" },
 ]
 
 [[package]]
@@ -72,7 +78,10 @@ name = "api"
 version = "0.1.0"
 source = { virtual = "apps/api" }
 dependencies = [
+    { name = "ai-engine" },
+    { name = "database" },
     { name = "fastapi" },
+    { name = "nlu" },
     { name = "pydantic" },
     { name = "python-multipart" },
     { name = "uvicorn" },
@@ -80,10 +89,13 @@ dependencies = [
 
 [package.metadata]
 requires-dist = [
-    { name = "fastapi", specifier = ">=0.129.0" },
-    { name = "pydantic", specifier = ">=2.12.5" },
-    { name = "python-multipart", specifier = ">=0.0.22" },
-    { name = "uvicorn", specifier = ">=0.40.0" },
+    { name = "ai-engine", editable = "packages/ai-engine" },
+    { name = "database", editable = "packages/database" },
+    { name = "fastapi", specifier = ">=0.110.0" },
+    { name = "nlu", editable = "packages/nlu" },
+    { name = "pydantic", specifier = ">=2.7.0" },
+    { name = "python-multipart", specifier = ">=0.0.9" },
+    { name = "uvicorn", specifier = ">=0.29.0" },
 ]
 
 [[package]]
@@ -471,16 +483,18 @@ wheels = [
 [[package]]
 name = "database"
 version = "0.1.0"
-source = { virtual = "packages/database" }
+source = { editable = "packages/database" }
 dependencies = [
     { name = "pgvector" },
     { name = "sqlalchemy" },
+    { name = "utils" },
 ]
 
 [package.metadata]
 requires-dist = [
     { name = "pgvector" },
     { name = "sqlalchemy" },
+    { name = "utils", editable = "packages/utils" },
 ]
 
 [[package]]
@@ -1284,7 +1298,13 @@ wheels = [
 [[package]]
 name = "nlu"
 version = "0.1.0"
-source = { virtual = "packages/nlu" }
+source = { editable = "packages/nlu" }
+dependencies = [
+    { name = "utils" },
+]
+
+[package.metadata]
+requires-dist = [{ name = "utils", editable = "packages/utils" }]
 
 [[package]]
 name = "numpy"
@@ -2218,15 +2238,19 @@ version = "0.1.0"
 source = { virtual = "apps/scraper" }
 dependencies = [
     { name = "beautifulsoup4" },
+    { name = "database" },
     { name = "requests" },
     { name = "scrapy" },
+    { name = "utils" },
 ]
 
 [package.metadata]
 requires-dist = [
     { name = "beautifulsoup4" },
+    { name = "database", editable = "packages/database" },
     { name = "requests" },
     { name = "scrapy" },
+    { name = "utils", editable = "packages/utils" },
 ]
 
 [[package]]
@@ -2381,12 +2405,18 @@ name = "telegram-bot"
 version = "0.1.0"
 source = { virtual = "apps/telegram-bot" }
 dependencies = [
+    { name = "ai-engine" },
+    { name = "database" },
+    { name = "nlu" },
     { name = "python-telegram-bot" },
     { name = "requests" },
 ]
 
 [package.metadata]
 requires-dist = [
+    { name = "ai-engine", editable = "packages/ai-engine" },
+    { name = "database", editable = "packages/database" },
+    { name = "nlu", editable = "packages/nlu" },
     { name = "python-telegram-bot" },
     { name = "requests" },
 ]
@@ -2531,7 +2561,7 @@ wheels = [
 [[package]]
 name = "utils"
 version = "0.1.0"
-source = { virtual = "packages/utils" }
+source = { editable = "packages/utils" }
 
 [[package]]
 name = "uuid-utils"

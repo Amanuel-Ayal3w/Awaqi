@@ -13,6 +13,6 @@ dependencies = [
 ]
 
 [tool.uv.sources]
-nlu = { path = "../nlu", editable = true }
-database = { path = "../database", editable = true }
-utils = { path = "../utils", editable = true }
+nlu = { workspace = true }
+database = { workspace = true }
+utils = { workspace = true }
