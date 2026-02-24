@@ -50,10 +50,10 @@ class ChatSession(Base):
         nullable=False,
         default=Channel.WEB,
     )
-    # NULL → anonymous/guest session; non-NULL → authenticated admin
+    # NULL → anonymous/guest session; non-NULL → authenticated admin (references ba_user)
     user_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True),
-        ForeignKey("admin_users.id", ondelete="SET NULL"),
+        ForeignKey("ba_user.id", ondelete="SET NULL"),
         nullable=True,
         index=True,
     )
@@ -69,8 +69,8 @@ class ChatSession(Base):
     )
 
     # Relationships
-    user: Mapped["AdminUser"] = relationship(  # noqa: F821
-        "AdminUser", back_populates="chat_sessions"
+    user: Mapped["BaUser"] = relationship(  # noqa: F821
+        "BaUser", back_populates="chat_sessions"
     )
     messages: Mapped[list["Message"]] = relationship(
         "Message", back_populates="session", cascade="all, delete-orphan",

@@ -3,12 +3,13 @@ database package — public API.
 
 Import from here in other packages:
     from database import get_session, get_redis, redis_client
-    from database.models import Document, DocumentChunk, AdminUser, ChatSession, Message, Feedback
+    from database.models import BaUser, BaSession, Document, ChatSession, Message, Feedback
 """
 
 from database.db import AsyncSessionLocal, engine, get_session, init_db
 from database.models import (
-    AdminUser,
+    BaSession,
+    BaUser,
     ChatSession,
     Document,
     DocumentChunk,
@@ -28,9 +29,10 @@ __all__ = [
     "get_redis",
     "ping_redis",
     # ORM models
+    "BaUser",
+    "BaSession",
     "Document",
     "DocumentChunk",
-    "AdminUser",
     "ChatSession",
     "Message",
     "Feedback",

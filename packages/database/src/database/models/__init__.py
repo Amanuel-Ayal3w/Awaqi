@@ -1,11 +1,12 @@
+from .auth import BaSession, BaUser
 from .document import Document, DocumentChunk
 from .session import ChatSession, Feedback, Message
-from .user import AdminUser
 
 __all__ = [
+    "BaUser",
+    "BaSession",
     "Document",
     "DocumentChunk",
-    "AdminUser",
     "ChatSession",
     "Message",
     "Feedback",

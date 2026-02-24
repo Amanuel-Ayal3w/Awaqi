@@ -1,52 +1,22 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { DataTable } from "@/components/ui/data-table"
 import { ColumnDef } from "@tanstack/react-table"
 import { Button } from "@/components/ui/button"
-import { Input } from "@/components/ui/input"
 import { Upload, File, Loader2, Trash2, RefreshCw } from "lucide-react"
 import { useDropzone } from "react-dropzone"
 import { cn } from "@/lib/utils"
+import { adminApi } from "@/lib/api"
+import type { DocumentStatus } from "@/types/api"
 
-// Type definition matching the SRS/SDS Document class
-type Document = {
+type DocumentRow = {
     id: string
     title: string
-    fileType: "PDF" | "DOCX" | "TXT"
-    uploadDate: string
-    status: "PENDING" | "PROCESSING" | "INDEXED" | "FAILED"
-    size: string
+    status: string
 }
 
-const data: Document[] = [
-    {
-        id: "1",
-        title: "Proclamation No. 1234/2021",
-        fileType: "PDF",
-        uploadDate: "2023-10-24",
-        status: "INDEXED",
-        size: "2.4 MB",
-    },
-    {
-        id: "2",
-        title: "Labor Law Amendment 2023",
-        fileType: "DOCX",
-        uploadDate: "2023-10-25",
-        status: "PROCESSING",
-        size: "1.1 MB",
-    },
-    {
-        id: "3",
-        title: "Tax Regulation Guide",
-        fileType: "PDF",
-        uploadDate: "2023-10-26",
-        status: "FAILED",
-        size: "5.6 MB",
-    },
-]
-
-const columns: ColumnDef<Document>[] = [
+const columns: ColumnDef<DocumentRow>[] = [
     {
         accessorKey: "title",
         header: "Title",
@@ -58,66 +28,86 @@ const columns: ColumnDef<Document>[] = [
         ),
     },
     {
-        accessorKey: "fileType",
-        header: "Type",
-    },
-    {
-        accessorKey: "size",
-        header: "Size",
-    },
-    {
-        accessorKey: "uploadDate",
-        header: "Uploaded",
+        accessorKey: "id",
+        header: "Document ID",
+        cell: ({ row }) => (
+            <span className="font-mono text-xs text-muted-foreground">
+                {(row.getValue("id") as string).slice(0, 8)}…
+            </span>
+        ),
     },
     {
         accessorKey: "status",
         header: "Status",
         cell: ({ row }) => {
-            const status = row.getValue("status") as string
+            const status = (row.getValue("status") as string).toLowerCase()
             return (
                 <div
                     className={cn(
-                        "inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-semibold transition-colors focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2",
-                        status === "INDEXED" && "bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400",
-                        status === "PROCESSING" && "bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-400",
-                        status === "FAILED" && "bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400",
-                        status === "PENDING" && "bg-gray-100 text-gray-800 dark:bg-gray-800 dark:text-gray-400",
+                        "inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-semibold",
+                        status === "indexed" && "bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400",
+                        status === "pending" && "bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-400",
+                        status === "failed" && "bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400",
                     )}
                 >
-                    {status}
+                    {status.toUpperCase()}
                 </div>
             )
         },
     },
     {
         id: "actions",
-        cell: ({ row }) => {
-            return (
-                <div className="flex justify-end gap-2">
-                    <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive">
-                        <Trash2 className="h-4 w-4" />
-                    </Button>
-                </div>
-            )
-        },
+        cell: () => (
+            <div className="flex justify-end gap-2">
+                <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive" disabled>
+                    <Trash2 className="h-4 w-4" />
+                </Button>
+            </div>
+        ),
     },
 ]
 
 export default function KnowledgeBasePage() {
     const [isUploading, setIsUploading] = useState(false)
+    const [uploadError, setUploadError] = useState<string | null>(null)
+    const [documents, setDocuments] = useState<DocumentRow[]>([])
+
+    const refreshDocuments = () => {
+        // Documents list will be populated as uploads come in during this session.
+        // A dedicated GET /v1/admin/documents endpoint can be added later for persistence.
+    }
+
+    useEffect(() => {
+        refreshDocuments()
+    }, [])
+
+    const handleUpload = async (file: File) => {
+        setIsUploading(true)
+        setUploadError(null)
+        try {
+            const result: DocumentStatus = await adminApi.uploadDocument(file)
+            setDocuments((prev) => [
+                { id: result.doc_id, title: file.name, status: result.status },
+                ...prev,
+            ])
+        } catch (err: unknown) {
+            const message = err instanceof Error ? err.message : "Upload failed"
+            setUploadError(message)
+        } finally {
+            setIsUploading(false)
+        }
+    }
 
     const { getRootProps, getInputProps, isDragActive } = useDropzone({
         onDrop: (acceptedFiles) => {
-            setIsUploading(true)
-            // TODO: Implement actual upload logic to FastAPI
-            console.log("Uploading files:", acceptedFiles)
-            setTimeout(() => setIsUploading(false), 2000)
+            acceptedFiles.forEach(handleUpload)
         },
         accept: {
-            'application/pdf': ['.pdf'],
-            'application/vnd.openxmlformats-officedocument.wordprocessingml.document': ['.docx'],
-            'text/plain': ['.txt']
-        }
+            "application/pdf": [".pdf"],
+            "application/vnd.openxmlformats-officedocument.wordprocessingml.document": [".docx"],
+            "text/plain": [".txt"],
+        },
+        multiple: true,
     })
 
     return (
@@ -125,7 +115,7 @@ export default function KnowledgeBasePage() {
             <div className="flex flex-col gap-2">
                 <h1 className="text-3xl font-bold tracking-tight">Knowledge Base</h1>
                 <p className="text-muted-foreground">
-                    Manage the documents that power the AI's answers.
+                    Manage the documents that power the AI&apos;s answers.
                 </p>
             </div>
 
@@ -146,23 +136,26 @@ export default function KnowledgeBasePage() {
                         )}
                     </div>
                     <h3 className="text-lg font-semibold">
-                        {isUploading ? "Uploading..." : "Upload Documents"}
+                        {isUploading ? "Uploading…" : "Upload Documents"}
                     </h3>
                     <p className="text-sm text-muted-foreground">
-                        Drag and drop PDF, DOCX, or TXT files here, or click to select which documents to add to the knowledge base.
+                        Drag and drop PDF, DOCX, or TXT files here, or click to select files.
                     </p>
+                    {uploadError && (
+                        <p className="text-sm text-destructive mt-1">{uploadError}</p>
+                    )}
                 </div>
             </div>
 
             <div className="space-y-4">
                 <div className="flex items-center justify-between">
-                    <h2 className="text-xl font-semibold">Indexed Documents</h2>
-                    <Button variant="outline" size="sm" className="gap-2">
+                    <h2 className="text-xl font-semibold">Uploaded Documents</h2>
+                    <Button variant="outline" size="sm" className="gap-2" onClick={refreshDocuments}>
                         <RefreshCw className="h-4 w-4" />
                         Refresh
                     </Button>
                 </div>
-                <DataTable columns={columns} data={data} />
+                <DataTable columns={columns} data={documents} />
             </div>
         </div>
     )

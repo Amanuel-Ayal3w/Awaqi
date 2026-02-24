@@ -7,88 +7,71 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Button } from '@/components/ui/button';
-import { Mail, Phone, Lock, User, Chrome, Eye, EyeOff } from 'lucide-react';
+import { Mail, Lock, Eye, EyeOff } from 'lucide-react';
 import { useRouter } from 'next/navigation';
+import { authClient } from '@/lib/auth-client';
 
 export function LoginForm() {
     const t = useTranslations('auth');
     const locale = useLocale();
     const router = useRouter();
-    const [isLogin, setIsLogin] = useState(true);
     const [isLoading, setIsLoading] = useState(false);
     const [showPassword, setShowPassword] = useState(false);
-
-    const toggleMode = () => setIsLogin(!isLogin);
+    const [error, setError] = useState<string | null>(null);
+    const [email, setEmail] = useState('');
+    const [password, setPassword] = useState('');
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
         setIsLoading(true);
-        // Mock authentication
-        setTimeout(() => {
+        setError(null);
+
+        const { error: signInError } = await authClient.signIn.email({
+            email,
+            password,
+        });
+
+        if (signInError) {
+            setError(signInError.message ?? 'Invalid email or password');
             setIsLoading(false);
-            router.push(`/${locale}/chat`);
-        }, 1500);
+            return;
+        }
+
+        router.push(`/${locale}/admin`);
     };
 
     return (
         <Card className="w-full max-w-md backdrop-blur-md bg-background/80 supports-[backdrop-filter]:bg-background/40 border-muted/20 dark:border-white/20 shadow-xl">
             <CardHeader className="space-y-1 text-center">
                 <CardTitle className="text-2xl font-bold tracking-tight">
-                    {isLogin ? t('welcomeBack') : t('createAccount')}
+                    {t('welcomeBack')}
                 </CardTitle>
                 <CardDescription>
-                    {isLogin ? t('loginSubtitle') : t('signupSubtitle')}
+                    {t('loginSubtitle')}
                 </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
-                <Button variant="outline" className="w-full relative" disabled={isLoading}>
-                    <Chrome className="mr-2 h-4 w-4" />
-                    {t('continueWithGoogle')}
-                </Button>
-
-                <div className="relative">
-                    <div className="absolute inset-0 flex items-center">
-                        <span className="w-full border-t" />
-                    </div>
-                    <div className="relative flex justify-center text-xs uppercase">
-                        <span className="bg-background px-2 text-muted-foreground">
-                            {t('orContinueWith')}
-                        </span>
-                    </div>
-                </div>
-
                 <Tabs defaultValue="email" className="w-full">
-                    <TabsList className="grid w-full grid-cols-2 mb-4">
+                    <TabsList className="grid w-full grid-cols-1 mb-4">
                         <TabsTrigger value="email">{t('email')}</TabsTrigger>
-                        <TabsTrigger value="phone">{t('phone')}</TabsTrigger>
                     </TabsList>
 
                     <form onSubmit={handleSubmit}>
-                        {!isLogin && (
-                            <div className="space-y-2 mb-4">
-                                <Label htmlFor="name">{t('fullName')}</Label>
-                                <div className="relative">
-                                    <User className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
-                                    <Input id="name" placeholder="John Doe" className="pl-9" disabled={isLoading} />
-                                </div>
-                            </div>
-                        )}
-
                         <TabsContent value="email" className="space-y-4">
                             <div className="space-y-2">
                                 <Label htmlFor="email">{t('email')}</Label>
                                 <div className="relative">
                                     <Mail className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
-                                    <Input id="email" type="email" placeholder="m@example.com" className="pl-9" disabled={isLoading} required />
-                                </div>
-                            </div>
-                        </TabsContent>
-                        <TabsContent value="phone" className="space-y-4">
-                            <div className="space-y-2">
-                                <Label htmlFor="phone">{t('phone')}</Label>
-                                <div className="relative">
-                                    <Phone className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
-                                    <Input id="phone" type="tel" placeholder="+251 911 234 567" className="pl-9" disabled={isLoading} required />
+                                    <Input
+                                        id="email"
+                                        type="email"
+                                        placeholder="admin@example.com"
+                                        className="pl-9"
+                                        disabled={isLoading}
+                                        required
+                                        value={email}
+                                        onChange={(e) => setEmail(e.target.value)}
+                                    />
                                 </div>
                             </div>
                         </TabsContent>
@@ -99,10 +82,12 @@ export function LoginForm() {
                                 <Lock className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
                                 <Input
                                     id="password"
-                                    type={showPassword ? "text" : "password"}
+                                    type={showPassword ? 'text' : 'password'}
                                     className="pl-9 pr-10"
                                     disabled={isLoading}
                                     required
+                                    value={password}
+                                    onChange={(e) => setPassword(e.target.value)}
                                 />
                                 <Button
                                     type="button"
@@ -117,29 +102,27 @@ export function LoginForm() {
                                     ) : (
                                         <Eye className="h-4 w-4 text-muted-foreground" />
                                     )}
-                                    <span className="sr-only">{showPassword ? 'Hide password' : 'Show password'}</span>
+                                    <span className="sr-only">
+                                        {showPassword ? 'Hide password' : 'Show password'}
+                                    </span>
                                 </Button>
                             </div>
                         </div>
 
+                        {error && (
+                            <p className="text-sm text-destructive mt-2">{error}</p>
+                        )}
+
                         <Button className="w-full mt-6" type="submit" disabled={isLoading}>
-                            {isLoading ? t('processing') : (isLogin ? t('signIn') : t('signUp'))}
+                            {isLoading ? t('processing') : t('signIn')}
                         </Button>
                     </form>
                 </Tabs>
             </CardContent>
             <CardFooter>
-                <div className="text-sm text-center w-full text-muted-foreground">
-                    {isLogin ? t('dontHaveAccount') : t('alreadyHaveAccount')}
-                    {' '}
-                    <button
-                        onClick={toggleMode}
-                        className="underline text-primary hover:text-primary/80 font-medium"
-                        disabled={isLoading}
-                    >
-                        {isLogin ? t('signUp') : t('signIn')}
-                    </button>
-                </div>
+                <p className="text-xs text-center w-full text-muted-foreground">
+                    Admin access only. Contact your system administrator if you need an account.
+                </p>
             </CardFooter>
         </Card>
     );
