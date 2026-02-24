@@ -1,6 +1,13 @@
-from fastapi import APIRouter
 from typing import List
-from apps.api.schemas import ChatRequest, ChatResponse, ChatMessage, FeedbackRequest, Citation
+
+from fastapi import APIRouter
+
+from apps.api.schemas import (
+    ChatMessage,
+    ChatRequest,
+    ChatResponse,
+    FeedbackRequest,
+)
 
 router = APIRouter()
 

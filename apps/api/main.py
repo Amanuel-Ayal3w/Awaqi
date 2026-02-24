@@ -1,6 +1,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from apps.api.routers import chat, admin
+
+from apps.api.routers import admin, chat
 
 app = FastAPI(title="Awaqi API", version="1.0.0")
 

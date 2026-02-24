@@ -5,10 +5,10 @@ Revises: —
 Create Date: 2026-02-24
 """
 
-from alembic import op
 import sqlalchemy as sa
-from sqlalchemy.dialects import postgresql
+from alembic import op
 from pgvector.sqlalchemy import Vector
+from sqlalchemy.dialects import postgresql
 
 # revision identifiers
 revision: str = "0001"

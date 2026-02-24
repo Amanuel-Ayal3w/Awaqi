@@ -1,6 +1,14 @@
+
 from fastapi import APIRouter, File, UploadFile
-from typing import List
-from apps.api.schemas import LoginRequest, Token, DocumentStatus, LogEntryList, ScraperStatus, LogEntry
+
+from apps.api.schemas import (
+    DocumentStatus,
+    LogEntry,
+    LogEntryList,
+    LoginRequest,
+    ScraperStatus,
+    Token,
+)
 
 router = APIRouter()
 

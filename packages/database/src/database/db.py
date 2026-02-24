@@ -96,8 +96,8 @@ async def init_db() -> None:
     In production, use `alembic upgrade head` instead.
     """
     # Import all models so their metadata is registered on Base
-    from database.base import Base  # noqa: F401 — must be imported for side effects
     import database.models  # noqa: F401
+    from database.base import Base  # noqa: F401 — must be imported for side effects
 
     async with engine.begin() as conn:
         # Enable the pgvector extension before creating tables

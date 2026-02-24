@@ -1,6 +1,6 @@
 from .document import Document, DocumentChunk
+from .session import ChatSession, Feedback, Message
 from .user import AdminUser
-from .session import ChatSession, Message, Feedback
 
 __all__ = [
     "Document",

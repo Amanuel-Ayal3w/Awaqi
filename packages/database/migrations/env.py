@@ -31,8 +31,8 @@ config.set_main_option("sqlalchemy.url", database_url)
 
 # ── Import all models so Alembic can detect schema changes ───────────────────
 #    The imports must happen BEFORE target_metadata is set.
-from database.base import Base  # noqa: E402
 import database.models  # noqa: E402, F401 — registers all tables on Base.metadata
+from database.base import Base  # noqa: E402
 
 target_metadata = Base.metadata
 
