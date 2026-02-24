@@ -14,8 +14,8 @@ dist/
 downloads/
 eggs/
 .eggs/
-lib/
-lib64/
+/lib/
+/lib64/
 parts/
 sdist/
 var/
@@ -224,7 +224,7 @@ out/
 /.nyc_output
 
 # Logs
-logs
+/logs
 npm-debug.log*
 pnpm-debug.log*
 yarn-debug.log*
