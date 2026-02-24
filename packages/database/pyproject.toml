@@ -4,9 +4,14 @@ version = "0.1.0"
 description = "Shared database models and schemas"
 requires-python = ">=3.11"
 dependencies = [
-    "sqlalchemy",
+    "sqlalchemy>=2.0",
     "pgvector",
-    "utils"
+    "alembic",
+    "asyncpg",
+    "psycopg2-binary",
+    "redis",
+    "python-dotenv",
+    "utils",
 ]
 
 [tool.uv.sources]
