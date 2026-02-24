@@ -18,5 +18,5 @@ check: build-web
 # Next.js Frontend — lint + type-check + build
 # ──────────────────────────────────────────────
 build-web:
-	@echo "🔍 Type-checking and building Next.js..."
-	cd apps/web && npm run type-check && npm run build
+	@echo "�  Building Next.js (includes TypeScript check)..."
+	cd apps/web && npm run build

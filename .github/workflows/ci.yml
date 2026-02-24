@@ -29,10 +29,6 @@ jobs:
         run: npm ci
         working-directory: apps/web
 
-      - name: Type check (TypeScript)
-        run: npm run type-check
-        working-directory: apps/web
-
-      - name: Build
+      - name: Build (includes TypeScript check)
         run: npm run build
         working-directory: apps/web
