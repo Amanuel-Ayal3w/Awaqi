@@ -68,13 +68,18 @@ const columns: ColumnDef<DocumentRow>[] = [
 ]
 
 export default function KnowledgeBasePage() {
-    const [isUploading, setIsUploading] = useState(false)
+    // Track the number of in-flight uploads rather than a single boolean.
+    // This way the spinner stays active until every concurrent upload finishes,
+    // not just the first one to complete.
+    const [uploadCount, setUploadCount] = useState(0)
     const [uploadError, setUploadError] = useState<string | null>(null)
     const [documents, setDocuments] = useState<DocumentRow[]>([])
 
+    const isUploading = uploadCount > 0
+
     const refreshDocuments = () => {
-        // Documents list will be populated as uploads come in during this session.
-        // A dedicated GET /v1/admin/documents endpoint can be added later for persistence.
+        // Documents list is populated as uploads come in during this session.
+        // A dedicated GET /v1/admin/documents endpoint can be added later.
     }
 
     useEffect(() => {
@@ -82,7 +87,7 @@ export default function KnowledgeBasePage() {
     }, [])
 
     const handleUpload = async (file: File) => {
-        setIsUploading(true)
+        setUploadCount((n) => n + 1)
         setUploadError(null)
         try {
             const result: DocumentStatus = await adminApi.uploadDocument(file)
@@ -94,7 +99,9 @@ export default function KnowledgeBasePage() {
             const message = err instanceof Error ? err.message : "Upload failed"
             setUploadError(message)
         } finally {
-            setIsUploading(false)
+            // Decrement only this file's slot — other concurrent uploads keep
+            // the count above zero and the spinner remains visible.
+            setUploadCount((n) => n - 1)
         }
     }
 
