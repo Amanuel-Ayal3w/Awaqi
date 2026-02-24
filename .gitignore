@@ -242,7 +242,7 @@ lerna-debug.log*
 # Vercel
 .vercel
 
-# Typescript
+# TypeScript
 *.tsbuildinfo
 next-env.d.ts
 
