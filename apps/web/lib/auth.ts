@@ -9,13 +9,14 @@ export const auth = betterAuth({
     enabled: true,
   },
   advanced: {
+    // Generate UUID v4 IDs to match the UUID primary key columns in ba_* tables
     database: {
-      // Generate UUID v4 IDs — keeps ba_user.id consistent with
-      // every other UUID primary key in the schema.
-      generateId: "uuid",
+      generateId: () => crypto.randomUUID(),
     },
   },
+  // Map Better Auth's default table names to our ba_* prefixed tables
   user: {
+    modelName: "ba_user",
     additionalFields: {
       role: {
         type: "string",
@@ -25,7 +26,6 @@ export const auth = betterAuth({
       },
       isActive: {
         type: "boolean",
-        // fieldName tells Better Auth to use "is_active" as the DB column name
         fieldName: "is_active",
         defaultValue: true,
         required: false,
@@ -33,7 +33,17 @@ export const auth = betterAuth({
       },
     },
   },
+  session: {
+    modelName: "ba_session",
+  },
+  account: {
+    modelName: "ba_account",
+  },
+  verification: {
+    modelName: "ba_verification",
+  },
 });
+
 
 export type Session = typeof auth.$Infer.Session;
 export type User = typeof auth.$Infer.Session.user;

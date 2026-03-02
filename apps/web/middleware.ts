@@ -13,11 +13,14 @@ const intlMiddleware = createIntlMiddleware({
 export default function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
-  // Protect all /[locale]/admin/* paths.
+  // Protect all /[locale]/admin/* paths — but NOT /admin/login itself (that's the entry point).
   // We check for the Better Auth session cookie here (Edge-compatible, no DB).
   // The actual cryptographic validation of the token happens inside FastAPI's
   // get_current_admin dependency on every admin API call.
-  if (pathname.includes("/admin")) {
+  const isAdminPath = pathname.includes("/admin");
+  const isAdminLoginPath = pathname.includes("/admin/login");
+
+  if (isAdminPath && !isAdminLoginPath) {
     const sessionToken = request.cookies.get("better-auth.session_token")?.value;
 
     if (!sessionToken) {
@@ -27,7 +30,8 @@ export default function middleware(request: NextRequest) {
         ? parts[0]
         : DEFAULT_LOCALE;
 
-      return NextResponse.redirect(new URL(`/${locale}/login`, request.url));
+      // Redirect to the ADMIN login page, not the customer login page
+      return NextResponse.redirect(new URL(`/${locale}/admin/login`, request.url));
     }
   }
 

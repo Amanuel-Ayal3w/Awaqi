@@ -8,7 +8,7 @@ import { Label } from '@/components/ui/label';
 import { Button } from '@/components/ui/button';
 import { Mail, Lock, Eye, EyeOff, User } from 'lucide-react';
 import { useRouter } from 'next/navigation';
-import { authClient } from '@/lib/auth-client';
+import { customerAuthClient } from '@/lib/customer-auth-client';
 import Link from 'next/link';
 
 export function CustomerSignUpForm() {
@@ -27,7 +27,7 @@ export function CustomerSignUpForm() {
         setIsLoading(true);
         setError(null);
 
-        const { error: signUpError } = await authClient.signUp.email({
+        const { error: signUpError } = await customerAuthClient.signUp.email({
             email,
             password,
             name,
