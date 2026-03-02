@@ -31,7 +31,7 @@ services:
     ports:
       - "8000:8000"
     environment:
-      DATABASE_URL: postgresql+asyncpg://user:password@db:5432/awaqi
+      DATABASE_URL: postgresql+asyncpg://user:password@db:5432/awaqi_db
       REDIS_URL: redis://redis:6379/0
       ALLOWED_ORIGINS: http://localhost:3000
     depends_on:
@@ -48,7 +48,7 @@ services:
       - "3000:3000"
     environment:
       # Sync (non-asyncpg) URL for Better Auth's node-postgres adapter
-      DATABASE_URL_SYNC: postgresql://user:password@db:5432/awaqi
+      DATABASE_URL_SYNC: postgresql://user:password@db:5432/awaqi_db
       # Better Auth uses this to sign session cookies
       BETTER_AUTH_SECRET: change-me-in-production
       NEXT_PUBLIC_APP_URL: http://localhost:3000
@@ -61,7 +61,7 @@ services:
       context: .
       dockerfile: docker/bot.Dockerfile
     environment:
-      DATABASE_URL: postgresql+asyncpg://user:password@db:5432/awaqi
+      DATABASE_URL: postgresql+asyncpg://user:password@db:5432/awaqi_db
       REDIS_URL: redis://redis:6379/0
     depends_on:
       - api
@@ -71,7 +71,7 @@ services:
       context: .
       dockerfile: docker/scraper.Dockerfile
     environment:
-      DATABASE_URL: postgresql+asyncpg://user:password@db:5432/awaqi
+      DATABASE_URL: postgresql+asyncpg://user:password@db:5432/awaqi_db
     depends_on:
       db:
         condition: service_healthy

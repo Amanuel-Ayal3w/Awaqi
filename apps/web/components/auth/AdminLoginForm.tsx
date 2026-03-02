@@ -11,7 +11,7 @@ import { Mail, Lock, Eye, EyeOff } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { authClient } from '@/lib/auth-client';
 
-export function LoginForm() {
+export function AdminLoginForm() {
     const t = useTranslations('auth');
     const locale = useLocale();
     const router = useRouter();

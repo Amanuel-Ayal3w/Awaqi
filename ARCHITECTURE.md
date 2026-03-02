@@ -6,18 +6,19 @@ Awaqi is an AI-powered Support Bot for the Ethiopian Revenue Authority, designed
 ## Technology Stack
 
 ### Frontend
-- **Framework**: Next.js 15 (React with TypeScript)
+- **Framework**: Next.js 15 (React with TypeScript, App Router)
 - **UI Library**: shadcn/ui (Radix UI components)
 - **Internationalization**: next-intl (Amharic and English support)
+- **Authentication**: better-auth (configured via `apps/web/lib/auth.ts`)
 - **Styling**: Tailwind CSS
 
 ### Backend
 - **API Framework**: FastAPI (Python 3.12+)
 - **Package Manager**: uv (Universal Python Project Manager)
 - **LLM**: Gemini 2.5 Flash
-- **Embeddings**: multilingual-e5-large (planned)
-- **Vector Database**: PostgreSQL + pgvector (planned)
-- **NLU**: XLM-RoBERTa, fastText (planned)
+- **Embeddings**: multilingual-e5-large (planned integration in `ai-engine`)
+- **Vector Database**: PostgreSQL + pgvector (models implemented)
+- **NLU**: XLM-RoBERTa, fastText (planned scaffolding in `nlu`)
 
 ### Infrastructure
 - **Containerization**: Docker
@@ -116,17 +117,18 @@ Awaqi is an AI-powered Support Bot for the Ethiopian Revenue Authority, designed
 - Confidence scoring
 
 #### 2. `packages/database` - Data Layer
-**Purpose**: PostgreSQL schemas, vector operations, and ORM.
+**Purpose**: PostgreSQL schemas, vector operations, caching, and ORM.
 
-**Planned Models**:
-- `Document`: Regulatory documents
-- `User`: Admin users
-- `ChatSession`: Conversation history
-- `Message`: Individual messages
+**Implemented Models**:
+- `Document` & `DocumentChunk`: Regulatory documents and 1024-token chunks with 1024-dim vector embeddings
+- `User` & `Auth`: Admin user tables compatible with `better-auth`
+- `ChatSession` & `Message`: Conversation history linking UUIDs and roles
+- `Feedback`: Captures user ratings (`THUMBS_UP`/`THUMBS_DOWN`) and comments
 
 **Features**:
-- pgvector extension for embeddings
-- Full-text search support
+- pgvector extension (Approximate Nearest Neighbor `ivfflat` index) for embeddings
+- Full-text search support (GIN index with `gin_trgm_ops` for fast content lookups)
+- Redis client configuration for session handling
 
 #### 3. `packages/nlu` - Natural Language Understanding
 **Purpose**: Language detection and intent classification.
@@ -312,3 +314,4 @@ http://localhost:8000/docs
 - Design Spec: `G13 SDS Support Bot AI.docx.md`
 - Requirements: `G13 SRS Suport Bot AI.docx.md`
 - API Documentation: `http://localhost:8000/docs` (when running)
+'
