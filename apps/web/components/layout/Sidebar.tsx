@@ -3,27 +3,55 @@
 import React from 'react';
 import Link from 'next/link';
 import { useTranslations, useLocale } from 'next-intl';
-import { usePathname } from 'next/navigation';
+import { usePathname, useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/button';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import { Sheet, SheetClose, SheetContent, SheetTrigger } from '@/components/ui/sheet';
-import { Menu, Plus, MessageSquare, Settings, History } from 'lucide-react';
+import { Sheet, SheetContent, SheetTrigger } from '@/components/ui/sheet';
+import { Menu, Plus, MessageSquare, Settings, History, LogOut, LogIn } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useSidebar } from '@/contexts/SidebarContext';
-
-// Mock Data for History
-const mockHistory = [
-    { id: '1', title: 'VAT Registration Guide', date: 'Today' },
-    { id: '2', title: 'Tax Clearance Certificate', date: 'Yesterday' },
-    { id: '3', title: 'Penalty Waiver Request', date: 'Previous 7 Days' },
-    { id: '4', title: 'Employment Income Tax', date: 'Previous 30 Days' },
-];
+import { customerAuthClient } from '@/lib/customer-auth-client';
+import { chatApi } from '@/lib/api';
+import { getOrCreateSessionId } from '@/lib/chat-session';
+import type { ChatMessage } from '@/types/api';
 
 export function Sidebar() {
     const t = useTranslations('common');
     const locale = useLocale();
     const pathname = usePathname();
     const { isOpen, toggleSidebar, isMobileOpen, setMobileOpen } = useSidebar();
+    const router = useRouter();
+    const { data: session } = customerAuthClient.useSession();
+
+    const user = session?.user;
+    const initials = user?.name
+        ? user.name.trim().split(' ').map((n: string) => n[0]).slice(0, 2).join('').toUpperCase()
+        : '?';
+
+    const handleSignOut = async () => {
+        await customerAuthClient.signOut();
+        router.push(`/${locale}/chat/login`);
+    };
+
+    const [showUserMenu, setShowUserMenu] = React.useState(false);
+    const [recentHistory, setRecentHistory] = React.useState<ChatMessage[]>([]);
+
+    React.useEffect(() => {
+        const sessionId = getOrCreateSessionId();
+
+        chatApi
+            .getHistory(sessionId)
+            .then((history) => {
+                const latestUserMessages = history
+                    .filter((msg) => msg.role === 'user')
+                    .slice(-4)
+                    .reverse();
+                setRecentHistory(latestUserMessages);
+            })
+            .catch(() => {
+                setRecentHistory([]);
+            });
+    }, []);
 
     // Inner Component to handle Collapsed/Expanded states
     const SidebarContent = ({ isCollapsed, isMobile = false }: { isCollapsed: boolean; isMobile?: boolean }) => (
@@ -54,7 +82,7 @@ export function Sidebar() {
                     variant={isCollapsed ? "ghost" : "outline"}
                     title={t('newChat')}
                 >
-                    <Link href={`/${locale}`}>
+                    <Link href={`/${locale}/chat`}>
                         <Plus className="h-5 w-5" />
                         {!isCollapsed && <span className="font-semibold">{t('newChat')}</span>}
                     </Link>
@@ -74,16 +102,16 @@ export function Sidebar() {
                 </div>
                 <ScrollArea className="flex-1 px-2">
                     <div className="space-y-1">
-                        {mockHistory.map((item) => (
+                        {recentHistory.map((item, index) => (
                             <Button
-                                key={item.id}
+                                key={`${item.timestamp}-${index}`}
                                 variant="ghost"
                                 className="w-full justify-start h-auto py-2 px-3 text-sm font-normal text-muted-foreground hover:text-foreground"
                                 asChild
                             >
-                                <Link href={`/${locale}/chat/history/${item.id}`}>
+                                <Link href={`/${locale}/chat/history`}>
                                     <MessageSquare className="h-4 w-4 mr-2 shrink-0" />
-                                    <span className="truncate text-left">{item.title}</span>
+                                    <span className="truncate text-left">{item.content}</span>
                                 </Link>
                             </Button>
                         ))}
@@ -101,8 +129,81 @@ export function Sidebar() {
                 </ScrollArea>
             </div>
 
-            {/* Bottom Section: Settings */}
-            <div className={cn("p-2 border-t mt-auto", isCollapsed ? "flex justify-center" : "block")}>
+            {/* Bottom Section: User + Settings */}
+            <div className={cn("p-2 border-t mt-auto space-y-1", isCollapsed ? "flex flex-col items-center" : "block")}>
+
+                {/* User Avatar / Sign In */}
+                {user ? (
+                    <div className="relative">
+                        {/* Upward popup card */}
+                        {showUserMenu && (
+                            <>
+                                {/* Backdrop */}
+                                <div
+                                    className="fixed inset-0 z-40"
+                                    onClick={() => setShowUserMenu(false)}
+                                />
+                                {/* Popup */}
+                                <div className={cn(
+                                    "absolute z-50 bottom-full mb-2 bg-popover border border-border rounded-xl shadow-xl p-3 min-w-[180px] animate-in fade-in slide-in-from-bottom-2 duration-150",
+                                    isCollapsed ? "left-0" : "left-0 right-0"
+                                )}>
+                                    <div className="flex items-center gap-3 mb-3 pb-3 border-b border-border">
+                                        <div className="h-9 w-9 rounded-full bg-primary flex items-center justify-center text-primary-foreground text-sm font-bold shrink-0">
+                                            {initials}
+                                        </div>
+                                        <div className="min-w-0">
+                                            <p className="text-sm font-semibold truncate">{user.name}</p>
+                                            <p className="text-xs text-muted-foreground truncate">{user.email}</p>
+                                        </div>
+                                    </div>
+                                    <button
+                                        onClick={async () => { setShowUserMenu(false); await handleSignOut(); }}
+                                        className="w-full flex items-center gap-2 px-2 py-1.5 rounded-md text-sm text-destructive hover:bg-destructive/10 transition-colors font-medium"
+                                    >
+                                        <LogOut className="h-4 w-4" />
+                                        Sign out
+                                    </button>
+                                </div>
+                            </>
+                        )}
+
+                        {/* Avatar button */}
+                        <button
+                            onClick={() => setShowUserMenu(v => !v)}
+                            className={cn(
+                                "flex items-center gap-3 w-full px-2 py-2 rounded-md hover:bg-muted transition-colors",
+                                isCollapsed ? "justify-center px-0" : "",
+                                showUserMenu && "bg-muted"
+                            )}
+                            title={user.name ?? 'Account'}
+                        >
+                            <div className="h-8 w-8 rounded-full bg-primary flex items-center justify-center text-primary-foreground text-xs font-bold shrink-0 select-none">
+                                {initials}
+                            </div>
+                            {!isCollapsed && (
+                                <span className="text-sm font-medium truncate flex-1 text-left">{user.name}</span>
+                            )}
+                        </button>
+                    </div>
+                ) : (
+                    <Button
+                        variant="ghost"
+                        className={cn(
+                            "justify-start text-muted-foreground hover:text-foreground transition-all duration-200",
+                            isCollapsed ? "w-10 h-10 p-0 justify-center" : "w-full"
+                        )}
+                        title="Sign in"
+                        asChild
+                    >
+                        <Link href={`/${locale}/chat/login`}>
+                            <LogIn className={cn("h-5 w-5", !isCollapsed && "mr-3")} />
+                            {!isCollapsed && <span>Sign in</span>}
+                        </Link>
+                    </Button>
+                )}
+
+                {/* Settings */}
                 <Button
                     variant="ghost"
                     className={cn(

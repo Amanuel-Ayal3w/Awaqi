@@ -114,7 +114,7 @@ export function CustomerLoginForm() {
             <CardFooter>
                 <p className="text-sm text-center w-full text-muted-foreground">
                     Don't have an account?{' '}
-                    <Link href={`/${locale}/signup`} className="text-primary hover:underline">
+                    <Link href={`/${locale}/chat/signup`} className="text-primary hover:underline">
                         Sign up
                     </Link>
                 </p>

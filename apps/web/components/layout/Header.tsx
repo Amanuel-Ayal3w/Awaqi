@@ -22,8 +22,18 @@ export function Header() {
     const { toggleMobileOpen } = useSidebar();
 
     const handleLanguageChange = (newLocale: string) => {
-        // Replace the locale in the current pathname
-        const newPathname = pathname.replace(`/${locale}`, `/${newLocale}`);
+        const localePrefixPattern = /^\/(en|am)(?=\/|$)/;
+        const pathWithoutLocale = pathname.replace(localePrefixPattern, '') || '/';
+        const normalizedPath = pathWithoutLocale.startsWith('/')
+            ? pathWithoutLocale
+            : `/${pathWithoutLocale}`;
+
+        // next-intl uses `localePrefix: as-needed`, so default locale `en` is unprefixed.
+        const newPathname =
+            newLocale === 'en'
+                ? normalizedPath
+                : `/${newLocale}${normalizedPath === '/' ? '' : normalizedPath}`;
+
         router.push(newPathname);
     };
 

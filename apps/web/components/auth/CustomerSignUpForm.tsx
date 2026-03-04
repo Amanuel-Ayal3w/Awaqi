@@ -133,7 +133,7 @@ export function CustomerSignUpForm() {
             <CardFooter>
                 <p className="text-sm text-center w-full text-muted-foreground">
                     Already have an account?{' '}
-                    <Link href={`/${locale}/login`} className="text-primary hover:underline">
+                    <Link href={`/${locale}/chat/login`} className="text-primary hover:underline">
                         Sign in
                     </Link>
                 </p>
