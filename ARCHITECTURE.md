@@ -233,9 +233,9 @@ sequenceDiagram
 sequenceDiagram
     participant Scraper as apps/scraper
     participant MoR as mor.gov.et
-    participant Processor as Document Processor
-    participant Embed as Embedding Engine
-    participant DB as PostgreSQL + pgvector
+    participant API as FastAPI Gateway
+    participant Processor as AI Engine (Processor)
+    participant DB as Database
     
     Note over Scraper: Daily cron (00:00 EAT)
     Scraper->>MoR: Check for new documents
@@ -244,22 +244,23 @@ sequenceDiagram
     loop For each new document
         Scraper->>MoR: Download PDF
         MoR-->>Scraper: PDF file
-        Scraper->>Processor: Process document
+        Scraper->>API: POST /v1/admin/upload (Document payload)
+        API->>Processor: Forward for processing
         Processor->>Processor: OCR + text extraction
-        Processor->>Processor: Chunk (1024 tokens, 100 overlap)
-        Processor->>Embed: Generate embeddings
-        Embed-->>Processor: Vector embeddings
-        Processor->>DB: Store chunks + embeddings
-        DB-->>Processor: Document ID
+        Processor->>Processor: Chunk and generate embeddings
+        Processor->>DB: Store document, chunks, and vectors
+        DB-->>Processor: Confirmation
+        Processor-->>API: Status Success
+        API-->>Scraper: 200 OK
     end
-    Scraper->>DB: Update metadata
 ```
 
 **Steps**:
-1. Scraper downloads PDFs from mor.gov.et
-2. Documents are processed (OCR, chunking)
-3. Embeddings are generated for each chunk
-4. Chunks and embeddings stored in PostgreSQL (pgvector)
+1. Scraper checks and downloads new PDFs from mor.gov.et
+2. Scraper forwards the raw document to the API via the ingestion pipeline (`POST /v1/admin/upload` or internal webhook)
+3. The API passes the document to the AI Engine / Processor
+4. The document is processed (OCR, text extraction, chunking, and embedding generation)
+5. The API/Processor safely handles writing to PostgreSQL (pgvector), ensuring a single entry point to the database
 
 ## Development Workflow
 
