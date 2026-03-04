@@ -9,12 +9,16 @@ name= parameters handle the Python snake_case ↔ DB camelCase translation.
 import uuid
 from datetime import datetime
 from enum import Enum as PyEnum
+from typing import TYPE_CHECKING
 
-from sqlalchemy import Boolean, DateTime, Enum, String, Text
+from sqlalchemy import Boolean, DateTime, Enum, ForeignKey, String, Text
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from database.base import Base
+
+if TYPE_CHECKING:
+    from database.models.session import ChatSession
 
 
 class AdminRole(str, PyEnum):
@@ -44,9 +48,9 @@ class BaUser(Base):
 
     # Awaqi-specific custom fields (snake_case DB columns via Better Auth additionalFields)
     role: Mapped[str] = mapped_column(
-        Enum(AdminRole, name="admin_role"),
+        Enum("superadmin", "editor", name="admin_role"),
         nullable=False,
-        default=AdminRole.EDITOR,
+        default="editor",
     )
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
 
@@ -78,6 +82,7 @@ class BaSession(Base):
     id: Mapped[str] = mapped_column(Text, primary_key=True)
     user_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
+        ForeignKey("ba_user.id", ondelete="CASCADE"),
         nullable=False,
         index=True,
         name="userId",

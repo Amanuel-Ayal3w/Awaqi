@@ -2,6 +2,7 @@ import axios from "axios";
 import { authClient } from "@/lib/auth-client";
 import { customerAuthClient } from "@/lib/customer-auth-client";
 import type {
+    AdminUserList,
     ChatMessage,
     ChatRequest,
     ChatResponse,
@@ -13,6 +14,7 @@ import type {
 
 const apiClient = axios.create({
     baseURL: process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000",
+    withCredentials: true,
 });
 
 // Attach the correct Better Auth session token as a Bearer header.
@@ -93,5 +95,14 @@ export const adminApi = {
     triggerScraper: async (): Promise<ScraperStatus> => {
         const { data } = await apiClient.post<ScraperStatus>("/v1/admin/scrape");
         return data;
+    },
+
+    listUsers: async (): Promise<AdminUserList> => {
+        const { data } = await apiClient.get<AdminUserList>("/v1/admin/users");
+        return data;
+    },
+
+    deleteUser: async (userId: string): Promise<void> => {
+        await apiClient.delete(`/v1/admin/users/${userId}`);
     },
 };

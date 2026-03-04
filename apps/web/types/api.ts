@@ -55,3 +55,16 @@ export interface ScraperStatus {
     job_id: string;
     status: string;
 }
+
+export interface AdminUserItem {
+    id: string;
+    name?: string | null;
+    email: string;
+    role: string;
+    is_active: boolean;
+    created_at: string;
+}
+
+export interface AdminUserList {
+    users: AdminUserItem[];
+}

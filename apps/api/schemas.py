@@ -53,3 +53,16 @@ class LogEntryList(BaseModel):
 class ScraperStatus(BaseModel):
     job_id: str
     status: str
+
+
+class AdminUserItem(BaseModel):
+    id: str
+    name: Optional[str] = None
+    email: str
+    role: str
+    is_active: bool
+    created_at: str
+
+
+class AdminUserList(BaseModel):
+    users: List[AdminUserItem]

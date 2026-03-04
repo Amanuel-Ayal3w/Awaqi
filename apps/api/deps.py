@@ -10,7 +10,7 @@ tables (completely separate from the admin ba_* tables).
 """
 
 from datetime import datetime, timezone
-from fastapi import Depends, Header, HTTPException, status
+from fastapi import Depends, Header, HTTPException, Request, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import contains_eager
@@ -19,8 +19,34 @@ from database.models.auth import BaSession, BaUser
 from database.models.customer import CuSession, CuUser
 
 
+def _extract_bearer_or_cookie_token(
+    authorization: str | None,
+    request: Request,
+    cookie_names: tuple[str, ...],
+) -> str | None:
+    if authorization:
+        if not authorization.startswith("Bearer "):
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Authorization header must use Bearer scheme",
+            )
+        token = authorization.removeprefix("Bearer ").strip()
+        if token:
+            return token
+
+    for cookie_name in cookie_names:
+        cookie_token = request.cookies.get(cookie_name)
+        if cookie_token:
+            return cookie_token
+
+    return None
+
+
 async def get_current_admin(
-    authorization: str = Header(..., description="Bearer <better-auth-session-token>"),
+    request: Request,
+    authorization: str | None = Header(
+        None, description="Bearer <better-auth-session-token>"
+    ),
     db: AsyncSession = Depends(get_session),
 ) -> BaUser:
     """
@@ -32,13 +58,11 @@ async def get_current_admin(
 
     Raises HTTP 401 if the token is missing, expired, or the user is inactive.
     """
-    if not authorization.startswith("Bearer "):
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Authorization header must use Bearer scheme",
-        )
-
-    token = authorization.removeprefix("Bearer ").strip()
+    token = _extract_bearer_or_cookie_token(
+        authorization=authorization,
+        request=request,
+        cookie_names=("better-auth.session_token", "__Secure-better-auth.session_token"),
+    )
     if not token:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -70,7 +94,10 @@ async def get_current_admin(
 
 
 async def get_current_customer(
-    authorization: str = Header(..., description="Bearer <customer-auth-session-token>"),
+    request: Request,
+    authorization: str | None = Header(
+        None, description="Bearer <customer-auth-session-token>"
+    ),
     db: AsyncSession = Depends(get_session),
 ) -> CuUser:
     """
@@ -85,13 +112,14 @@ async def get_current_customer(
 
     Raises HTTP 401 if the token is missing or expired.
     """
-    if not authorization.startswith("Bearer "):
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Authorization header must use Bearer scheme",
-        )
-
-    token = authorization.removeprefix("Bearer ").strip()
+    token = _extract_bearer_or_cookie_token(
+        authorization=authorization,
+        request=request,
+        cookie_names=(
+            "awaqi-customer.session_token",
+            "__Secure-awaqi-customer.session_token",
+        ),
+    )
     if not token:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,

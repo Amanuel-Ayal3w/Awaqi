@@ -8,9 +8,14 @@ from apps.api.routers import chat, admin
 app = FastAPI(title="Awaqi API", version="1.0.0")
 
 # Read allowed origins from env so production can lock this down.
-# Defaults to localhost:3000 for local development.
-_raw_origins = os.getenv("ALLOWED_ORIGINS", "http://localhost:3000")
-allowed_origins = [o.strip() for o in _raw_origins.split(",") if o.strip()]
+# Defaults include both localhost and 127.0.0.1 for local development.
+_raw_origins = os.getenv(
+    "ALLOWED_ORIGINS",
+    "http://localhost:3000,http://127.0.0.1:3000",
+)
+allowed_origins = list(
+    dict.fromkeys([o.strip() for o in _raw_origins.split(",") if o.strip()])
+)
 
 app.add_middleware(
     CORSMiddleware,

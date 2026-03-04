@@ -50,7 +50,7 @@ services:
       # Sync (non-asyncpg) URL for Better Auth's node-postgres adapter
       DATABASE_URL_SYNC: postgresql://user:password@db:5432/awaqi_db
       # Better Auth uses this to sign session cookies
-      BETTER_AUTH_SECRET: change-me-in-production
+      BETTER_AUTH_SECRET: ${BETTER_AUTH_SECRET:?BETTER_AUTH_SECRET must be set to a strong random value}
       NEXT_PUBLIC_APP_URL: http://localhost:3000
       NEXT_PUBLIC_API_URL: http://api:8000
     depends_on:

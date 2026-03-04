@@ -10,7 +10,7 @@ name= parameters handle the Python snake_case ↔ DB camelCase translation.
 import uuid
 from datetime import datetime
 
-from sqlalchemy import Boolean, DateTime, String, Text
+from sqlalchemy import Boolean, DateTime, ForeignKey, String, Text
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -65,6 +65,7 @@ class CuSession(Base):
     id: Mapped[str] = mapped_column(Text, primary_key=True)
     user_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
+        ForeignKey("cu_user.id", ondelete="CASCADE"),
         nullable=False,
         index=True,
         name="userId",

@@ -44,6 +44,10 @@ This repository hosts the **Ethio-Revenue-Bot**, an AI-powered tax support assis
 To spin up the entire system (Database, API, Frontend, Bot, Scraper):
 
 ```bash
+export BETTER_AUTH_SECRET="$(openssl rand -base64 32)"
+```
+
+```bash
 docker-compose -f docker/docker-compose.yml up --build
 ```
 

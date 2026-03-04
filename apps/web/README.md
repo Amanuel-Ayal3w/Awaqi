@@ -24,6 +24,11 @@ This is the Next.js frontend for the Awaqi Ethio-Revenue-Bot.
 
 ## getting started
 
+0. Set required environment variables (example):
+  ```bash
+  export BETTER_AUTH_SECRET="$(openssl rand -base64 32)"
+  ```
+
 1. Install dependencies:
    ```bash
    npm install

@@ -1,5 +1,8 @@
 import { betterAuth } from "better-auth";
 import { Pool } from "pg";
+import { getValidatedBetterAuthSecret } from "@/lib/auth-secret";
+
+const betterAuthSecret = getValidatedBetterAuthSecret();
 
 /**
  * Customer-facing Better Auth instance.
@@ -10,6 +13,7 @@ import { Pool } from "pg";
  *  - Has NO role or is_active fields — customers are always active
  */
 export const customerAuth = betterAuth({
+    secret: betterAuthSecret,
     baseURL: process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000",
     database: new Pool({
         connectionString: process.env.DATABASE_URL_SYNC,

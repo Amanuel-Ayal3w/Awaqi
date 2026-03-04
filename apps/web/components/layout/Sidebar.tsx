@@ -6,7 +6,7 @@ import { useTranslations, useLocale } from 'next-intl';
 import { usePathname, useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/button';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import { Sheet, SheetContent, SheetTrigger } from '@/components/ui/sheet';
+import { Sheet, SheetContent, SheetTitle } from '@/components/ui/sheet';
 import { Menu, Plus, MessageSquare, Settings, History, LogOut, LogIn } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useSidebar } from '@/contexts/SidebarContext';
@@ -244,6 +244,7 @@ export function Sidebar() {
             {/* Mobile Hamburger Menu - Controlled via Context (Triggered from Header) */}
             <Sheet open={isMobileOpen} onOpenChange={setMobileOpen}>
                 <SheetContent side="left" className="w-72 p-0">
+                    <SheetTitle className="sr-only">{t('appName')}</SheetTitle>
                     <div className="h-full bg-background">
                         <div className="p-4 border-b flex items-center">
                             <div className="h-8 w-8 rounded bg-primary mr-3 flex items-center justify-center text-primary-foreground font-bold">A</div>
