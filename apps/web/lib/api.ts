@@ -1,5 +1,6 @@
 import axios from "axios";
 import { authClient } from "@/lib/auth-client";
+import { customerAuthClient } from "@/lib/customer-auth-client";
 import type {
     ChatMessage,
     ChatRequest,
@@ -14,24 +15,34 @@ const apiClient = axios.create({
     baseURL: process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000",
 });
 
-// Attach the Better Auth session token as a Bearer header on every request.
-// For public endpoints (chat) the session will be null — no header is added
-// and FastAPI handles those routes without auth.
+// Attach the correct Better Auth session token as a Bearer header.
+// Admin endpoints use authClient, user endpoints use customerAuthClient.
 apiClient.interceptors.request.use(async (config) => {
-    const { data } = await authClient.getSession();
-    if (data?.session?.token) {
-        config.headers.Authorization = `Bearer ${data.session.token}`;
+    const isAdminApi = config.url?.startsWith('/v1/admin');
+
+    if (isAdminApi) {
+        const { data } = await authClient.getSession();
+        if (data?.session?.token) {
+            config.headers.Authorization = `Bearer ${data.session.token}`;
+        }
+    } else {
+        const { data } = await customerAuthClient.getSession();
+        if (data?.session?.token) {
+            config.headers.Authorization = `Bearer ${data.session.token}`;
+        }
     }
+
     return config;
 });
 
-// Redirect to login on 401 (session expired / revoked)
+// Redirect to the appropriate login page on 401 (session expired / revoked)
 apiClient.interceptors.response.use(
     (response) => response,
     (error) => {
         if (error.response?.status === 401 && typeof window !== "undefined") {
+            const isAdminApi = error.config?.url?.startsWith('/v1/admin');
             const locale = window.location.pathname.split("/")[1] ?? "en";
-            window.location.href = `/${locale}/login`;
+            window.location.href = isAdminApi ? `/${locale}/admin/login` : `/${locale}/login`;
         }
         return Promise.reject(error);
     }

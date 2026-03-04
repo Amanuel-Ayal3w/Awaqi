@@ -1,81 +1,88 @@
 'use client';
 
-import { useTranslations } from 'next-intl';
 import Link from 'next/link';
 import { Twitter, Linkedin, Facebook, Github } from 'lucide-react';
 
+const footerLinks = {
+    Product: [
+        { label: 'Features', href: '#features' },
+        { label: 'How It Works', href: '#how-it-works' },
+        { label: 'FAQ', href: '#faq' },
+    ],
+    Company: [
+        { label: 'About Us', href: '/about' },
+        { label: 'Contact', href: '/contact' },
+        { label: 'Blog', href: '/blog' },
+    ],
+    Legal: [
+        { label: 'Privacy Policy', href: '/privacy' },
+        { label: 'Terms of Service', href: '/terms' },
+    ],
+};
+
+const socialLinks = [
+    { icon: <Twitter className="h-4 w-4" />, href: '#', label: 'Twitter' },
+    { icon: <Linkedin className="h-4 w-4" />, href: '#', label: 'LinkedIn' },
+    { icon: <Facebook className="h-4 w-4" />, href: '#', label: 'Facebook' },
+    { icon: <Github className="h-4 w-4" />, href: '#', label: 'GitHub' },
+];
+
 export function Footer() {
-    const t = useTranslations('landing');
-
-    const socialLinks = [
-        { icon: <Twitter className="h-4 w-4" />, href: "#" },
-        { icon: <Linkedin className="h-4 w-4" />, href: "#" },
-        { icon: <Facebook className="h-4 w-4" />, href: "#" },
-        { icon: <Github className="h-4 w-4" />, href: "#" },
-    ];
-
     return (
-        <footer className="py-20 bg-background border-t border-white/5">
+        <footer className="py-16 border-t border-white/[0.06]">
             <div className="container">
-                <div className="grid grid-cols-2 md:grid-cols-6 gap-8 mb-16">
-                    <div className="col-span-2 md:col-span-2 pr-8">
-                        <div className="flex items-center gap-2 mb-6">
-                            <div className="h-6 w-6 rounded bg-primary flex items-center justify-center text-primary-foreground font-bold text-xs">A</div>
+                <div className="grid grid-cols-2 md:grid-cols-5 gap-10 mb-14">
+                    {/* Brand */}
+                    <div className="col-span-2 pr-8">
+                        <Link href="/" className="inline-flex items-center gap-1 mb-5">
                             <span className="text-lg font-bold tracking-tight">Awaqi</span>
-                        </div>
-                        <p className="text-muted-foreground text-sm max-w-xs mb-8 leading-relaxed">
-                            {t('heroSubtitle')}
+                            <span className="text-lg font-bold text-muted-foreground/40">.</span>
+                        </Link>
+                        <p className="text-muted-foreground text-sm max-w-xs mb-6 leading-relaxed">
+                            AI-powered Ethiopian tax support. Get accurate answers to your tax questions in Amharic and English, 24/7.
                         </p>
-                        <div className="flex gap-4">
-                            {socialLinks.map((link, index) => (
-                                <Link key={index} href={link.href} className="text-muted-foreground hover:text-foreground transition-colors p-2 hover:bg-white/5 rounded-full">
+                        <div className="flex gap-3">
+                            {socialLinks.map((link) => (
+                                <Link
+                                    key={link.label}
+                                    href={link.href}
+                                    aria-label={link.label}
+                                    className="w-8 h-8 rounded-full border border-white/10 flex items-center justify-center text-muted-foreground hover:text-foreground hover:border-white/30 transition-all duration-200"
+                                >
                                     {link.icon}
                                 </Link>
                             ))}
                         </div>
                     </div>
 
-                    <div>
-                        <h4 className="font-medium mb-6 text-sm text-foreground">{t('product')}</h4>
-                        <ul className="space-y-4">
-                            <li><Link href="#" className="text-muted-foreground hover:text-foreground transition-colors text-sm">{t('features')}</Link></li>
-                            <li><Link href="#" className="text-muted-foreground hover:text-foreground transition-colors text-sm">{t('pricing')}</Link></li>
-                            <li><Link href="#" className="text-muted-foreground hover:text-foreground transition-colors text-sm">{t('faq')}</Link></li>
-                        </ul>
-                    </div>
-
-                    <div>
-                        <h4 className="font-medium mb-6 text-sm text-foreground">{t('company')}</h4>
-                        <ul className="space-y-4">
-                            <li><Link href="#" className="text-muted-foreground hover:text-foreground transition-colors text-sm">{t('about')}</Link></li>
-                            <li><Link href="#" className="text-muted-foreground hover:text-foreground transition-colors text-sm">{t('blog')}</Link></li>
-                            <li><Link href="#" className="text-muted-foreground hover:text-foreground transition-colors text-sm">{t('contact')}</Link></li>
-                            <li><Link href="#" className="text-muted-foreground hover:text-foreground transition-colors text-sm">Customers</Link></li>
-                        </ul>
-                    </div>
-                    <div>
-                        <h4 className="font-medium mb-6 text-sm text-foreground">Resources</h4>
-                        <ul className="space-y-4">
-                            <li><Link href="#" className="text-muted-foreground hover:text-foreground transition-colors text-sm">Community</Link></li>
-                            <li><Link href="#" className="text-muted-foreground hover:text-foreground transition-colors text-sm">Help Center</Link></li>
-                            <li><Link href="#" className="text-muted-foreground hover:text-foreground transition-colors text-sm">Status</Link></li>
-                        </ul>
-                    </div>
-                    <div>
-                        <h4 className="font-medium mb-6 text-sm text-foreground">Legal</h4>
-                        <ul className="space-y-4">
-                            <li><Link href="#" className="text-muted-foreground hover:text-foreground transition-colors text-sm">{t('privacy')}</Link></li>
-                            <li><Link href="#" className="text-muted-foreground hover:text-foreground transition-colors text-sm">Terms</Link></li>
-                        </ul>
-                    </div>
+                    {/* Link columns */}
+                    {Object.entries(footerLinks).map(([heading, links]) => (
+                        <div key={heading}>
+                            <h4 className="text-sm font-semibold text-foreground mb-5">{heading}</h4>
+                            <ul className="space-y-3">
+                                {links.map((link) => (
+                                    <li key={link.label}>
+                                        <Link
+                                            href={link.href}
+                                            className="text-sm text-muted-foreground hover:text-foreground transition-colors duration-200"
+                                        >
+                                            {link.label}
+                                        </Link>
+                                    </li>
+                                ))}
+                            </ul>
+                        </div>
+                    ))}
                 </div>
 
-                <div className="pt-8 border-t border-white/5 flex flex-col md:flex-row justify-between items-center gap-4 text-xs text-muted-foreground">
-                    <p>© {new Date().getFullYear()} Awaqi. All rights reserved.</p>
-                    <div className="flex gap-8">
-                        <Link href="#" className="hover:text-foreground">Privacy Policy</Link>
-                        <Link href="#" className="hover:text-foreground">Terms of Service</Link>
-                    </div>
+                {/* Bottom bar */}
+                <div className="pt-8 border-t border-white/[0.06] flex flex-col md:flex-row justify-between items-center gap-4">
+                    <p className="text-xs text-muted-foreground">
+                        © {new Date().getFullYear()} Awaqi. All rights reserved.
+                    </p>
+                    <p className="text-xs text-muted-foreground">
+                        Ethiopian Revenue &amp; Customs Authority · Compliant AI
+                    </p>
                 </div>
             </div>
         </footer>

@@ -1,3 +1,5 @@
+@import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;500;600;700&display=swap');
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
@@ -37,36 +39,26 @@
   }
 
   .dark {
-    /* Atmos-style Dark Mode: No Pure Black */
-    --background: 240 10% 3.9%;
-    /* Zinc 950 - Deep rich dark */
+    /* lucyhub-inspired dark: deep charcoal ~#202020 */
+    --background: 240 3% 9%;
     --foreground: 0 0% 98%;
-    /* Zinc 50 */
-    --card: 240 10% 3.9%;
-    /* Blend with background or slight lift 240 3.7% 15.9% (Zinc 900) */
+    --card: 240 3% 12%;
     --card-foreground: 0 0% 98%;
-    --popover: 240 10% 3.9%;
+    --popover: 240 3% 12%;
     --popover-foreground: 0 0% 98%;
     --primary: 0 0% 98%;
-    /* White Primary in Dark */
     --primary-foreground: 240 5.9% 10%;
-    --secondary: 240 3.7% 15.9%;
-    /* Zinc 800 */
+    --secondary: 240 3% 16%;
     --secondary-foreground: 0 0% 98%;
-    --muted: 240 3.7% 15.9%;
-    /* Zinc 800 (Sidebar bg etc) */
-    --muted-foreground: 240 5% 64.9%;
-    /* Zinc 400 */
-    --accent: 240 3.7% 15.9%;
-    /* Zinc 800 */
+    --muted: 240 3% 16%;
+    --muted-foreground: 240 5% 60%;
+    --accent: 240 3% 16%;
     --accent-foreground: 0 0% 98%;
     --destructive: 0 62.8% 30.6%;
     --destructive-foreground: 0 0% 98%;
-    --border: 240 3.7% 15.9%;
-    /* Zinc 800 */
-    --input: 240 3.7% 15.9%;
+    --border: 240 3% 18%;
+    --input: 240 3% 18%;
     --ring: 240 4.9% 83.9%;
-    /* Zinc 300 */
   }
 }
 
@@ -77,6 +69,7 @@
 
   body {
     @apply bg-background text-foreground;
+    font-family: 'Space Grotesk', system-ui, sans-serif;
   }
 }
 
@@ -90,4 +83,68 @@ html[lang="am"] {
 /* Ensure LTR direction for both languages */
 html {
   direction: ltr;
+}
+
+/* ─── Landing Page Animations ─── */
+
+@keyframes waveform {
+  0% {
+    d: path('M0,25 C20,10 40,40 60,25 S100,10 120,25 S160,40 180,25 S220,10 240,25 S280,40 300,25');
+  }
+
+  50% {
+    d: path('M0,25 C20,40 40,10 60,25 S100,40 120,25 S160,10 180,25 S220,40 240,25 S280,10 300,25');
+  }
+
+  100% {
+    d: path('M0,25 C20,10 40,40 60,25 S100,10 120,25 S160,40 180,25 S220,10 240,25 S280,40 300,25');
+  }
+}
+
+@keyframes fadeInUp {
+  from {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes spotlight {
+
+  0%,
+  100% {
+    opacity: 0.30;
+    transform: translateY(0px);
+  }
+
+  50% {
+    opacity: 0.45;
+    transform: translateY(-20px);
+  }
+}
+
+@keyframes shimmer {
+  from {
+    background-position: -200% center;
+  }
+
+  to {
+    background-position: 200% center;
+  }
+}
+
+.animate-fade-in-up {
+  animation: fadeInUp 0.6s ease-out both;
+}
+
+.animate-spotlight {
+  animation: spotlight 8s ease-in-out infinite;
+}
+
+.waveform-path {
+  animation: waveform 4s ease-in-out infinite;
 }

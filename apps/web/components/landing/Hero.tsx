@@ -3,52 +3,91 @@
 import { Button } from '@/components/ui/button';
 import { useTranslations } from 'next-intl';
 import Link from 'next/link';
-import Image from 'next/image';
-import { ArrowRight, Sparkles } from 'lucide-react';
+import { ArrowRight, Globe, Clock, Zap, ShieldCheck } from 'lucide-react';
+
+function AnimatedWaveform() {
+    return (
+        <div className="w-full max-w-sm mx-auto my-8 opacity-70">
+            <svg
+                viewBox="0 0 300 50"
+                xmlns="http://www.w3.org/2000/svg"
+                className="w-full h-12"
+                aria-hidden="true"
+            >
+                <path
+                    className="waveform-path"
+                    d="M0,25 C20,10 40,40 60,25 S100,10 120,25 S160,40 180,25 S220,10 240,25 S280,40 300,25"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="1.5"
+                    strokeLinecap="round"
+                />
+            </svg>
+        </div>
+    );
+}
+
+const pills = [
+    { icon: <Globe className="h-3.5 w-3.5" />, label: 'Amharic & English' },
+    { icon: <Clock className="h-3.5 w-3.5" />, label: '24/7 Available' },
+    { icon: <Zap className="h-3.5 w-3.5" />, label: 'Instant Answers' },
+    { icon: <ShieldCheck className="h-3.5 w-3.5" />, label: 'Secure' },
+];
 
 export function Hero() {
     const t = useTranslations('landing');
 
     return (
-        <section className="relative overflow-hidden pt-32 pb-20 md:pt-48 md:pb-32">
-            {/* New "Spotlight" Background */}
+        <section className="relative overflow-hidden pt-36 pb-24 md:pt-52 md:pb-36">
+            {/* Subtle spotlight glow */}
             <div className="absolute top-0 left-0 w-full h-full overflow-hidden -z-10 pointer-events-none">
-                <div className="absolute top-[-10%] left-1/2 -translate-x-1/2 w-[1000px] h-[500px] bg-primary/20 blur-[120px] rounded-[100%] opacity-40 animate-spotlight" />
+                <div className="absolute top-[-5%] left-1/2 -translate-x-1/2 w-[900px] h-[450px] bg-white/5 blur-[140px] rounded-[100%] animate-spotlight" />
                 <div className="absolute bottom-0 left-0 right-0 h-px bg-gradient-to-r from-transparent via-white/10 to-transparent" />
-                {/* Stars/Dust effect could go here */}
             </div>
 
             <div className="container relative z-10 flex flex-col items-center text-center">
-                <div className="inline-flex items-center rounded-full border border-primary/20 bg-primary/5 px-3 py-1 text-xs font-medium text-primary mb-8 backdrop-blur-xl animate-fade-in-up">
-                    <Sparkles className="mr-2 h-3.5 w-3.5 text-primary" />
-                    <span className="text-muted-foreground mr-1">Announcing</span> {t('newRelease')}
-                    <ArrowRight className="ml-2 h-3 w-3 text-muted-foreground/50" />
+                {/* Sub-label */}
+                <div className="inline-flex items-center rounded-full border border-white/10 bg-white/5 px-4 py-1.5 text-xs font-medium text-muted-foreground mb-10 backdrop-blur-sm animate-fade-in-up">
+                    Ethiopian Revenue Authority · AI-Powered Support
                 </div>
 
-                <h1 className="text-5xl md:text-7xl lg:text-8xl font-bold tracking-tight mb-8 max-w-5xl bg-clip-text text-transparent bg-gradient-to-b from-foreground via-foreground/90 to-foreground/50 pb-2 dark:from-white dark:via-white/90 dark:to-white/50">
+                {/* Main headline */}
+                <h1 className="text-5xl md:text-7xl lg:text-8xl font-bold tracking-tight mb-6 max-w-4xl leading-[1.05]">
                     {t('heroTitle')}
                 </h1>
 
-                <p className="text-xl md:text-2xl text-muted-foreground max-w-2xl mb-12 leading-relaxed font-light">
+                {/* Sub-headline */}
+                <p className="text-lg md:text-xl text-muted-foreground max-w-2xl mb-10 leading-relaxed font-normal">
                     {t('heroSubtitle')}
                 </p>
 
-                <div className="flex flex-col sm:flex-row gap-4 w-full sm:w-auto mb-20">
-                    <Button asChild size="lg" className="h-12 px-8 rounded-full bg-primary text-primary-foreground hover:bg-primary/90 font-medium transition-all hover:scale-105">
-                        <Link href="/login">
-                            {t('getStarted')}
-                            <ArrowRight className="ml-2 h-4 w-4" />
-                        </Link>
-                    </Button>
-                    <Button asChild variant="outline" size="lg" className="h-12 px-8 rounded-full border-primary/20 bg-transparent hover:bg-primary/5 text-foreground backdrop-blur-sm transition-all hover:scale-105">
-                        <Link href="/login">
-                            {t('learnMore')}
-                        </Link>
-                    </Button>
+                {/* Feature pills */}
+                <div className="flex flex-wrap justify-center gap-2 mb-10">
+                    {pills.map((pill) => (
+                        <span
+                            key={pill.label}
+                            className="inline-flex items-center gap-1.5 px-4 py-1.5 rounded-full border border-white/10 bg-white/5 text-sm text-muted-foreground backdrop-blur-sm"
+                        >
+                            {pill.icon}
+                            {pill.label}
+                        </span>
+                    ))}
                 </div>
 
-                {/* 3D Dashboard Preview Removed */}
+                {/* Animated waveform */}
+                <AnimatedWaveform />
 
+                {/* CTA */}
+                <Button
+                    asChild
+                    size="lg"
+                    className="h-12 px-8 rounded-full bg-foreground text-background hover:bg-foreground/90 font-semibold text-sm transition-all hover:scale-105 shadow-lg"
+                >
+                    <Link href="/chat">
+                        Try Awaqi
+                        <ArrowRight className="ml-2 h-4 w-4" />
+                    </Link>
+                </Button>
             </div>
         </section>
     );

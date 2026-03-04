@@ -10,6 +10,7 @@ import { Pool } from "pg";
  *  - Has NO role or is_active fields — customers are always active
  */
 export const customerAuth = betterAuth({
+    baseURL: process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000",
     database: new Pool({
         connectionString: process.env.DATABASE_URL_SYNC,
     }),
@@ -17,6 +18,7 @@ export const customerAuth = betterAuth({
         enabled: true,
     },
     advanced: {
+        cookiePrefix: "awaqi-customer",
         // Generate UUID v4 IDs to match the UUID primary key columns in cu_* tables
         database: {
             generateId: () => crypto.randomUUID(),

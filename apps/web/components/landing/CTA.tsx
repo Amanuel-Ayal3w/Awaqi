@@ -24,7 +24,7 @@ export function CTA() {
                     </p>
                     <div className="flex flex-col sm:flex-row justify-center gap-4 relative z-10">
                         <Button asChild size="lg" variant="secondary" className="h-12 px-8 text-md font-semibold shadow-lg hover:scale-105 transition-transform">
-                            <Link href="/login">
+                            <Link href="/chat">
                                 {t('getStartedFree')}
                                 <ArrowRight className="ml-2 h-4 w-4" />
                             </Link>

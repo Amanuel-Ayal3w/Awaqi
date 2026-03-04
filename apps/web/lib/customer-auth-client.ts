@@ -9,4 +9,7 @@ import { createAuthClient } from "better-auth/react";
 export const customerAuthClient = createAuthClient({
     baseURL: process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000",
     basePath: "/api/customer-auth",
+    advanced: {
+        cookiePrefix: "awaqi-customer",
+    },
 });
