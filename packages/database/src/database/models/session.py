@@ -46,7 +46,7 @@ class ChatSession(Base):
         UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
     )
     channel: Mapped[str] = mapped_column(
-        Enum(Channel, name="channel"),
+        Enum(Channel, name="channel", values_callable=lambda e: [m.value for m in e]),
         nullable=False,
         default=Channel.WEB,
     )
@@ -96,7 +96,7 @@ class Message(Base):
         index=True,
     )
     role: Mapped[str] = mapped_column(
-        Enum(MessageRole, name="message_role"),
+        Enum(MessageRole, name="message_role", values_callable=lambda e: [m.value for m in e]),
         nullable=False,
     )
     content: Mapped[str] = mapped_column(Text, nullable=False)
@@ -135,7 +135,7 @@ class Feedback(Base):
         index=True,
     )
     rating: Mapped[str] = mapped_column(
-        Enum(FeedbackRating, name="feedback_rating"),
+        Enum(FeedbackRating, name="feedback_rating", values_callable=lambda e: [m.value for m in e]),
         nullable=False,
     )
     comment: Mapped[str | None] = mapped_column(String(1024), nullable=True)

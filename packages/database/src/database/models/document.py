@@ -46,7 +46,7 @@ class Document(Base):
     file_hash: Mapped[str] = mapped_column(String(64), nullable=False, unique=True)
     language: Mapped[str] = mapped_column(String(8), nullable=False, default="am")
     status: Mapped[str] = mapped_column(
-        Enum(DocumentStatus, name="document_status"),
+        Enum(DocumentStatus, name="document_status", values_callable=lambda e: [m.value for m in e]),
         nullable=False,
         default=DocumentStatus.PENDING,
     )
