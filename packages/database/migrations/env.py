@@ -25,7 +25,7 @@ if config.config_file_name is not None:
 # ── Pull DATABASE_URL from env (overrides alembic.ini placeholder) ───────────
 database_url: str = os.getenv(
     "DATABASE_URL",
-    "postgresql+asyncpg://user:password@localhost:5432/awaqi",
+    "postgresql+asyncpg://user:password@localhost:5432/awaqi_db",
 )
 
 # Normalise to asyncpg driver (mirrors db.py logic)

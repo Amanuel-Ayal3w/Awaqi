@@ -28,7 +28,7 @@ load_dotenv()
 
 _DATABASE_URL: str = os.getenv(
     "DATABASE_URL",
-    "postgresql+asyncpg://user:password@localhost:5432/awaqi",
+    "postgresql+asyncpg://user:password@localhost:5432/awaqi_db",
 )
 
 # Normalise the URL to always use the asyncpg async driver.

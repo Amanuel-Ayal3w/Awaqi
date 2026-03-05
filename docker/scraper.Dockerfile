@@ -1,6 +1,22 @@
-# Scraper Dockerfile
-FROM python:3.11-slim
+FROM python:3.12-slim
+
 WORKDIR /app
-# Copy shared packages and scraper app
-# Install dependencies
-# CMD ["python", "-m", "apps.scraper.main"]
+
+COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
+
+# Copy workspace definition
+COPY pyproject.toml uv.lock* ./
+COPY packages/utils/pyproject.toml packages/utils/pyproject.toml
+COPY packages/database/pyproject.toml packages/database/pyproject.toml
+COPY packages/nlu/pyproject.toml packages/nlu/pyproject.toml
+COPY packages/ai-engine/pyproject.toml packages/ai-engine/pyproject.toml
+COPY apps/api/pyproject.toml apps/api/pyproject.toml
+COPY apps/scraper/pyproject.toml apps/scraper/pyproject.toml
+COPY apps/telegram-bot/pyproject.toml apps/telegram-bot/pyproject.toml
+
+RUN uv sync --frozen --no-dev 2>/dev/null || uv sync --no-dev
+
+COPY packages/ packages/
+COPY apps/scraper/ apps/scraper/
+
+CMD ["uv", "run", "python", "-m", "apps.scraper.main"]
