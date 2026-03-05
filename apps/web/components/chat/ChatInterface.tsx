@@ -1,22 +1,37 @@
 'use client';
 
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { useTranslations } from 'next-intl';
+import { useSearchParams } from 'next/navigation';
 import { MessageList } from './MessageList';
 import { ChatInput } from './ChatInput';
 import { Message, Attachment } from './types';
 import { chatApi } from '@/lib/api';
-import { getOrCreateSessionId } from '@/lib/chat-session';
+import {
+    createNewSession,
+    getOrCreateSessionId,
+    setActiveSession,
+    updateSessionTitle,
+} from '@/lib/chat-session';
 
 export function ChatInterface() {
     const t = useTranslations('chat');
+    const searchParams = useSearchParams();
     const [messages, setMessages] = useState<Message[]>([]);
     const [isLoading, setIsLoading] = useState(false);
     const sessionIdRef = useRef<string>('');
+    const hasSavedTitleRef = useRef(false);
 
-    // Initialise session and load history on mount
-    useEffect(() => {
-        sessionIdRef.current = getOrCreateSessionId();
+    const sessionParam = searchParams.get('session');
+
+    const initSession = useCallback(() => {
+        if (sessionParam) {
+            sessionIdRef.current = sessionParam;
+            setActiveSession(sessionParam);
+        } else {
+            sessionIdRef.current = getOrCreateSessionId();
+        }
+        hasSavedTitleRef.current = false;
 
         chatApi.getHistory(sessionIdRef.current).then((history) => {
             if (history.length > 0) {
@@ -27,11 +42,18 @@ export function ChatInterface() {
                         content: msg.content,
                     }))
                 );
+                hasSavedTitleRef.current = true;
+            } else {
+                setMessages([]);
             }
         }).catch(() => {
-            // History fetch failing is non-fatal (new session)
+            setMessages([]);
         });
-    }, []);
+    }, [sessionParam]);
+
+    useEffect(() => {
+        initSession();
+    }, [initSession]);
 
     const handleSendMessage = async (content: string, attachments: Attachment[]) => {
         if (!content.trim() && attachments.length === 0) return;
@@ -44,6 +66,12 @@ export function ChatInterface() {
         };
         setMessages((prev) => [...prev, userMessage]);
         setIsLoading(true);
+
+        if (!hasSavedTitleRef.current) {
+            const title = content.length > 60 ? content.slice(0, 57) + '...' : content;
+            updateSessionTitle(sessionIdRef.current, title);
+            hasSavedTitleRef.current = true;
+        }
 
         try {
             const response = await chatApi.send({

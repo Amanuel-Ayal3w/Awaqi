@@ -3,25 +3,26 @@
 import React from 'react';
 import Link from 'next/link';
 import { useTranslations, useLocale } from 'next-intl';
-import { usePathname, useRouter } from 'next/navigation';
+import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { Button } from '@/components/ui/button';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Sheet, SheetContent, SheetTitle } from '@/components/ui/sheet';
-import { Menu, Plus, MessageSquare, Settings, History, LogOut, LogIn } from 'lucide-react';
+import { Menu, Plus, MessageSquare, Settings, LogOut, LogIn } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useSidebar } from '@/contexts/SidebarContext';
 import { customerAuthClient } from '@/lib/customer-auth-client';
-import { chatApi } from '@/lib/api';
-import { getOrCreateSessionId } from '@/lib/chat-session';
-import type { ChatMessage } from '@/types/api';
+import { getAllSessions, createNewSession, type ChatSessionInfo } from '@/lib/chat-session';
 
 export function Sidebar() {
     const t = useTranslations('common');
     const locale = useLocale();
     const pathname = usePathname();
+    const searchParams = useSearchParams();
     const { isOpen, toggleSidebar, isMobileOpen, setMobileOpen } = useSidebar();
     const router = useRouter();
     const { data: session } = customerAuthClient.useSession();
+
+    const activeSessionId = searchParams.get('session');
 
     const user = session?.user;
     const initials = user?.name
@@ -33,24 +34,21 @@ export function Sidebar() {
         router.push(`/${locale}/chat/login`);
     };
 
+    const handleNewChat = () => {
+        const newId = createNewSession();
+        router.push(`/${locale}/chat?session=${newId}`);
+        setMobileOpen(false);
+    };
+
     const [showUserMenu, setShowUserMenu] = React.useState(false);
-    const [recentHistory, setRecentHistory] = React.useState<ChatMessage[]>([]);
+    const [sessions, setSessions] = React.useState<ChatSessionInfo[]>([]);
 
     React.useEffect(() => {
-        const sessionId = getOrCreateSessionId();
+        setSessions(getAllSessions());
 
-        chatApi
-            .getHistory(sessionId)
-            .then((history) => {
-                const latestUserMessages = history
-                    .filter((msg) => msg.role === 'user')
-                    .slice(-4)
-                    .reverse();
-                setRecentHistory(latestUserMessages);
-            })
-            .catch(() => {
-                setRecentHistory([]);
-            });
+        const onUpdate = () => setSessions(getAllSessions());
+        window.addEventListener('awaqi-sessions-updated', onUpdate);
+        return () => window.removeEventListener('awaqi-sessions-updated', onUpdate);
     }, []);
 
     // Inner Component to handle Collapsed/Expanded states
@@ -74,59 +72,53 @@ export function Sidebar() {
                 )}
 
                 <Button
-                    asChild
                     className={cn(
                         "justify-start gap-3 shadow-none border-0 transition-all duration-200",
                         isCollapsed ? "w-10 h-10 p-0 justify-center bg-transparent hover:bg-muted" : "w-full bg-primary/10 text-primary hover:bg-primary/20 hover:text-primary"
                     )}
                     variant={isCollapsed ? "ghost" : "outline"}
                     title={t('newChat')}
+                    onClick={handleNewChat}
                 >
-                    <Link href={`/${locale}/chat`}>
-                        <Plus className="h-5 w-5" />
-                        {!isCollapsed && <span className="font-semibold">{t('newChat')}</span>}
-                    </Link>
+                    <Plus className="h-5 w-5" />
+                    {!isCollapsed && <span className="font-semibold">{t('newChat')}</span>}
                 </Button>
             </div>
 
-            {/* Middle Section: Recent History */}
-            {/* Hide History when collapsed to keep UI clean */}
+            {/* Middle Section: Chat Sessions */}
             <div className={cn(
                 "flex-1 overflow-hidden flex flex-col mt-4 transition-opacity duration-200",
                 isCollapsed ? "opacity-0 invisible h-0" : "opacity-100 visible"
             )}>
-                <div className="px-4 py-2">
-                    <h2 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">
-                        {t('history')}
-                    </h2>
-                </div>
-                <ScrollArea className="flex-1 px-2">
-                    <div className="space-y-1">
-                        {recentHistory.map((item, index) => (
-                            <Button
-                                key={`${item.timestamp}-${index}`}
-                                variant="ghost"
-                                className="w-full justify-start h-auto py-2 px-3 text-sm font-normal text-muted-foreground hover:text-foreground"
-                                asChild
-                            >
-                                <Link href={`/${locale}/chat/history`}>
-                                    <MessageSquare className="h-4 w-4 mr-2 shrink-0" />
-                                    <span className="truncate text-left">{item.content}</span>
-                                </Link>
-                            </Button>
-                        ))}
-                        <Button
-                            variant="ghost"
-                            className="w-full justify-start h-auto py-2 px-3 text-sm font-normal text-muted-foreground hover:text-foreground mt-2"
-                            asChild
-                        >
-                            <Link href={`/${locale}/chat/history`}>
-                                <History className="h-4 w-4 mr-2 shrink-0" />
-                                <span className="truncate">{t('viewAllHistory')}</span>
-                            </Link>
-                        </Button>
-                    </div>
-                </ScrollArea>
+                {sessions.length > 0 && (
+                    <>
+                        <div className="px-4 py-2">
+                            <h2 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">
+                                {t('history')}
+                            </h2>
+                        </div>
+                        <ScrollArea className="flex-1 px-2">
+                            <div className="space-y-0.5">
+                                {sessions.map((s) => (
+                                    <Button
+                                        key={s.id}
+                                        variant="ghost"
+                                        className={cn(
+                                            "w-full justify-start h-auto py-2 px-3 text-sm font-normal text-muted-foreground hover:text-foreground",
+                                            activeSessionId === s.id && "bg-secondary text-foreground"
+                                        )}
+                                        asChild
+                                    >
+                                        <Link href={`/${locale}/chat?session=${s.id}`}>
+                                            <MessageSquare className="h-4 w-4 mr-2 shrink-0" />
+                                            <span className="truncate text-left">{s.title}</span>
+                                        </Link>
+                                    </Button>
+                                ))}
+                            </div>
+                        </ScrollArea>
+                    </>
+                )}
             </div>
 
             {/* Bottom Section: User + Settings */}
