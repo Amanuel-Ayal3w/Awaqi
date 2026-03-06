@@ -68,7 +68,8 @@ export function ChatInterface() {
         setIsLoading(true);
 
         if (!hasSavedTitleRef.current) {
-            const title = content.length > 60 ? content.slice(0, 57) + '...' : content;
+            const baseTitle = content.trim() || attachments[0]?.name || 'New chat';
+            const title = baseTitle.length > 60 ? baseTitle.slice(0, 57) + '...' : baseTitle;
             updateSessionTitle(sessionIdRef.current, title);
             hasSavedTitleRef.current = true;
         }
