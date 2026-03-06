@@ -1,5 +1,6 @@
 import { redirect } from 'next/navigation';
 
-export default function HistoryPage({ params }: { params: { locale: string } }) {
-    redirect(`/${params.locale}/chat`);
+export default async function HistoryPage({ params }: { params: Promise<{ locale: string }> }) {
+    const { locale } = await params;
+    redirect(`/${locale}/chat`);
 }
