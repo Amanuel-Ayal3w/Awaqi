@@ -55,6 +55,16 @@ class ScraperStatus(BaseModel):
     status: str
 
 
+class ScraperJobStatus(BaseModel):
+    job_id: str
+    status: str
+    documents_found: int = 0
+    documents_new: int = 0
+    started_at: Optional[str] = None
+    finished_at: Optional[str] = None
+    error: Optional[str] = None
+
+
 class AdminUserItem(BaseModel):
     id: str
     name: Optional[str] = None

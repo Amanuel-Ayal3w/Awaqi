@@ -21,9 +21,10 @@ Awaqi is an AI-powered Support Bot for the Ethiopian Revenue Authority, designed
 - **NLU**: XLM-RoBERTa, fastText (planned scaffolding in `nlu`)
 
 ### Infrastructure
-- **Containerization**: Docker
-- **Session Storage**: Redis (planned)
-- **Rate Limiting**: Redis-based (planned)
+- **Containerization**: Docker & Docker Compose
+- **Database**: PostgreSQL 16 + pgvector (via `packages/database`, Alembic migrations)
+- **Session Storage**: Redis (configured in `packages/database/redis_client.py`)
+- **Rate Limiting**: Redis-based (15 req / 10 min per IP, via `apps/api/deps_rate_limit.py`)
 
 ## Monorepo Structure
 
@@ -58,10 +59,11 @@ Awaqi is an AI-powered Support Bot for the Ethiopian Revenue Authority, designed
 - `POST /v1/chat/send`: Send a message to the chatbot
 - `GET /v1/chat/history/{session_id}`: Retrieve conversation history
 - `POST /v1/chat/feedback/{message_id}`: Submit feedback
-- `POST /v1/auth/login`: Admin authentication
-- `POST /v1/admin/upload`: Upload regulatory documents
-- `GET /v1/admin/logs`: View system logs
-- `POST /v1/admin/scrape`: Trigger scraper job
+- `GET /v1/admin/users`: List admin users (auth required)
+- `DELETE /v1/admin/users/{user_id}`: Delete an admin user (auth required)
+- `POST /v1/admin/upload`: Upload regulatory documents (auth required)
+- `GET /v1/admin/logs`: View system logs (auth required)
+- `POST /v1/admin/scrape`: Trigger scraper job (auth required)
 
 **Dependencies**:
 - `fastapi`, `pydantic`, `uvicorn`
@@ -72,15 +74,39 @@ Awaqi is an AI-powered Support Bot for the Ethiopian Revenue Authority, designed
 
 **Key Routes**:
 - `/[locale]/`: Landing page
-- `/[locale]/chat`: Main chat interface
-- `/[locale]/login`: Admin login
+- `/[locale]/chat`: Main chat interface (with `?session=<uuid>` for specific sessions)
+- `/[locale]/chat/login`: Customer login
+- `/[locale]/admin/login`: Admin login
+- `/[locale]/admin/*`: Admin dashboard (knowledge base, logs, scraper, settings)
 - `/[locale]/chat/settings`: User settings (planned)
 
 **Features**:
 - Bilingual support (Amharic/English)
 - Dark mode UI
 - Responsive design
-- Session-based chat history
+- Multi-session chat with sidebar history
+
+**Chat Session Management**:
+
+Sessions are tracked both client-side (for fast sidebar rendering) and server-side (for persistence).
+
+| Storage | Key | What | Lifetime |
+|---|---|---|---|
+| `sessionStorage` | `awaqi_active_session` | Active session UUID for current tab | Tab close |
+| `localStorage` | `awaqi_sessions` | Array of `{id, title, createdAt}` for sidebar | Permanent (per browser) |
+| PostgreSQL | `chat_sessions` + `messages` | Full conversation data | Permanent (server) |
+
+**New Chat flow**:
+1. User clicks **+ New Chat** → `createNewSession()` generates a UUID, stores it in `sessionStorage`
+2. Sidebar navigates to `/chat?session=<new-uuid>` (URL change triggers re-render)
+3. `ChatInterface` reads `?session=` from `useSearchParams()`, clears messages, sets up empty chat
+4. On first user message → `updateSessionTitle(id, content)` saves `{id, title, createdAt}` to `localStorage`
+5. A custom DOM event (`awaqi-sessions-updated`) fires → Sidebar re-reads `localStorage` and shows the new session
+
+**Resuming a session**:
+1. User clicks a session title in the sidebar → navigates to `/chat?session=<uuid>`
+2. `ChatInterface` picks up the UUID, calls `GET /v1/chat/history/<uuid>` to load messages from the API
+3. Sidebar highlights the active session via `searchParams.get('session')`
 
 #### 3. `apps/scraper` - Automated Knowledge Ingestor
 **Purpose**: Scrape regulatory documents from mor.gov.et.
@@ -121,14 +147,17 @@ Awaqi is an AI-powered Support Bot for the Ethiopian Revenue Authority, designed
 
 **Implemented Models**:
 - `Document` & `DocumentChunk`: Regulatory documents and 1024-token chunks with 1024-dim vector embeddings
-- `User` & `Auth`: Admin user tables compatible with `better-auth`
+- `BaUser` & `BaSession`: Admin auth tables managed by Better Auth (with custom `role` and `is_active` fields)
+- `CuUser` & `CuSession`: Customer auth tables managed by Better Auth
 - `ChatSession` & `Message`: Conversation history linking UUIDs and roles
 - `Feedback`: Captures user ratings (`THUMBS_UP`/`THUMBS_DOWN`) and comments
 
 **Features**:
+- Async engine via `asyncpg` with connection pooling (pool size 10, max overflow 20)
 - pgvector extension (Approximate Nearest Neighbor `ivfflat` index) for embeddings
 - Full-text search support (GIN index with `gin_trgm_ops` for fast content lookups)
-- Redis client configuration for session handling
+- Redis client configuration for session handling and rate limiting
+- Alembic async migrations (`migrations/env.py` runs via `asyncpg`)
 
 #### 3. `packages/nlu` - Natural Language Understanding
 **Purpose**: Language detection and intent classification.
@@ -271,18 +300,24 @@ uv add --package ai-engine langchain
 
 # Add internal workspace dependency
 uv add --package api ai-engine
-. We're about to make the chang
+
 # Sync all dependencies
 uv sync
 ```
 
 ### Running Services
 ```bash
-# Frontend
+# Start PostgreSQL + Redis
+docker compose -f docker/docker-compose.yml up -d db redis
+
+# Run database migrations
+cd packages/database && uv run alembic upgrade head && cd ../..
+
+# Frontend (from apps/web)
 cd apps/web && npm run dev
 
-# Backend
-uv run --package api uvicorn apps.api.main:app --reload --port 8000
+# Backend (from repo root)
+uv run uvicorn apps.api.main:app --reload --host 0.0.0.0 --port 8000
 
 # View API docs
 http://localhost:8000/docs
@@ -290,12 +325,30 @@ http://localhost:8000/docs
 
 ## Security
 
+### Authentication
+
+**Better Auth** (running inside Next.js) manages both admin and customer auth. It owns the `ba_*` and `cu_*` tables in PostgreSQL.
+
+**Admin auth flow**:
+1. Admin logs in via `/admin/login` → Better Auth writes to `ba_session` with a unique token
+2. Frontend attaches the session token as `Authorization: Bearer <token>` on admin API calls
+3. FastAPI's `get_current_admin` dependency JOINs `ba_session` + `ba_user`, checks expiry and `is_active` — no JWT or shared secrets needed
+
+**Customer auth flow**:
+Same pattern using `cu_session` + `cu_user` tables and the `get_current_customer` dependency.
+
+**Guest users**: No login required for chat. A UUID-based session is created client-side and stored in `sessionStorage`.
+
 ### Access Control
-- **Public Users**: Anonymous session-based authentication (read-only chat)
-- **Admins**: JWT-based authentication with CRUD privileges
+- **Guest Users**: Anonymous UUID-based sessions (chat only, no login)
+- **Customers**: Better Auth email/password login via `cu_*` tables
+- **Admins**: Better Auth email/password login via `ba_*` tables with role-based access (`superadmin` / `editor`)
 
 ### Rate Limiting
-- 15 requests per 10 minutes per IP (planned)
+- 15 requests per 10 minutes per IP, enforced via Redis `INCR` + `EXPIRE` on `rate:{ip}` keys
+- Applied to `POST /v1/chat/send` and `GET /v1/chat/history/{session_id}`
+- Returns HTTP 429 with `Retry-After` header when the limit is exceeded
+- Respects `X-Forwarded-For` for deployments behind a reverse proxy
 - Redis-backed with automatic expiry
 
 ### Data Privacy
@@ -303,13 +356,12 @@ http://localhost:8000/docs
 - No PII collection from public users
 
 ## Future Enhancements
-1. Implement actual RAG logic in `ai-engine`
-2. Connect `database` package with PostgreSQL
-3. Implement scraper automation
-4. Add multi-turn conversation context
-5. Implement confidence-based fallback ("Contact ERA officer")
-6. Add Telegram bot deployment
-7. Implement RBAC for admin panel
+1. Implement actual RAG logic in `ai-engine` (currently returns placeholder responses)
+2. Implement scraper automation (cron scheduling, PDF processing pipeline)
+3. Add multi-turn conversation context (pass prior messages to LLM)
+4. Implement confidence-based fallback ("Contact ERA officer")
+5. Add Telegram bot deployment
+6. Wire customer auth into chat (track sessions per logged-in customer)
 
 ## References
 - Design Spec: `G13 SDS Support Bot AI.docx.md`

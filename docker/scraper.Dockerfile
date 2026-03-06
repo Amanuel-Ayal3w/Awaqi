@@ -19,4 +19,4 @@ RUN uv sync --frozen --no-dev 2>/dev/null || uv sync --no-dev
 COPY packages/ packages/
 COPY apps/scraper/ apps/scraper/
 
-CMD ["uv", "run", "python", "-m", "apps.scraper.main"]
+CMD ["uv", "run", "python", "-m", "scraper"]

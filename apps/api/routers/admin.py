@@ -1,4 +1,5 @@
 import hashlib
+import json
 import uuid
 from datetime import datetime, timezone
 
@@ -13,12 +14,18 @@ from apps.api.schemas import (
     DocumentStatus,
     LogEntry,
     LogEntryList,
+    ScraperJobStatus,
     ScraperStatus,
 )
 from database import get_session
 from database.models.auth import BaUser
 from database.models.document import Document, DocumentStatus as DocStatusEnum
 from database.models.session import Message, MessageRole
+from database.redis_client import redis_client
+
+REDIS_TRIGGER_KEY = "scraper:trigger"
+REDIS_LOCK_KEY = "scraper:running"
+REDIS_JOB_PREFIX = "scraper:job:"
 
 router = APIRouter()
 
@@ -148,8 +155,28 @@ async def get_logs(
 async def trigger_scrape(
     current_user: BaUser = Depends(get_current_admin),
 ):
-    # TODO: dispatch a real scraper job (e.g. publish to Redis queue)
-    # from apps.scraper import trigger_job
-    # job_id = await trigger_job()
+    is_running = await redis_client.get(REDIS_LOCK_KEY)
+    if is_running:
+        return ScraperStatus(job_id="", status="already_running")
+
     job_id = str(uuid.uuid4())
+    await redis_client.set(
+        REDIS_TRIGGER_KEY,
+        json.dumps({"job_id": job_id, "requested_at": datetime.now(timezone.utc).isoformat()}),
+    )
     return ScraperStatus(job_id=job_id, status="queued")
+
+
+@router.get("/admin/scrape/status", response_model=ScraperJobStatus)
+async def get_scrape_status(
+    job_id: str,
+    current_user: BaUser = Depends(get_current_admin),
+):
+    raw = await redis_client.get(f"{REDIS_JOB_PREFIX}{job_id}")
+    if not raw:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Job not found or expired",
+        )
+    data = json.loads(raw)
+    return ScraperJobStatus(**data)

@@ -24,6 +24,8 @@ apps/api/
 
 ### 1. Start infrastructure
 
+**Option A — Docker (recommended for teams):**
+
 From the repo root:
 
 ```bash
@@ -31,6 +33,33 @@ docker compose -f docker/docker-compose.yml up -d db redis
 ```
 
 This gives you PostgreSQL (`awaqi_db`) on `:5432` and Redis on `:6379`.
+
+**Option B — Local installs (if Docker is unavailable):**
+
+Install and start both services natively:
+
+```bash
+# PostgreSQL (Ubuntu/Debian)
+sudo apt install postgresql
+sudo systemctl start postgresql
+sudo -u postgres createdb awaqi_db
+
+# Redis (Ubuntu/Debian)
+sudo apt install redis-server
+sudo systemctl start redis-server
+
+# Verify Redis is up
+redis-cli ping   # should return PONG
+```
+
+On macOS use `brew install postgresql redis` and `brew services start ...`.
+
+> **Configure the connection** via environment variables before starting the API:
+> ```bash
+> export DATABASE_URL=postgresql+asyncpg://postgres:postgres@localhost:5432/awaqi_db
+> export REDIS_URL=redis://localhost:6379/0
+> ```
+> You can also put these in a `.env` file at the repo root — `uv` will pick them up automatically.
 
 ### 2. Install dependencies
 

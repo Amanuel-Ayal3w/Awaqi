@@ -6,6 +6,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from apps.api.deps_rate_limit import require_rate_limit
 from apps.api.schemas import (
     ChatMessage,
     ChatRequest,
@@ -59,6 +60,7 @@ async def _get_or_create_session(
 async def send_message(
     request: ChatRequest,
     db: AsyncSession = Depends(get_session),
+    _rl: None = Depends(require_rate_limit),
 ):
     chat_session = await _get_or_create_session(
         request.session_id, request.language or "en", db
@@ -105,6 +107,7 @@ async def send_message(
 async def get_history(
     session_id: str,
     db: AsyncSession = Depends(get_session),
+    _rl: None = Depends(require_rate_limit),
 ):
     try:
         sid = uuid.UUID(session_id)
