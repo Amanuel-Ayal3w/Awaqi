@@ -9,18 +9,20 @@ overlapping runs.
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import json
 import logging
 import sys
+import uuid
 from datetime import datetime, timezone
 
 import httpx
 import redis.asyncio as aioredis
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
-
 from database.db import AsyncSessionLocal
 from database.redis_client import redis_client
+
 from scraper.config import (
     HTTP_TIMEOUT,
     HTTP_USER_AGENT,
@@ -44,6 +46,20 @@ logging.basicConfig(
     stream=sys.stdout,
 )
 logger = logging.getLogger("scraper")
+
+_LOCK_RELEASE_SCRIPT = """
+if redis.call("get", KEYS[1]) == ARGV[1] then
+    return redis.call("del", KEYS[1])
+end
+return 0
+"""
+
+_LOCK_REFRESH_SCRIPT = """
+if redis.call("get", KEYS[1]) == ARGV[1] then
+    return redis.call("expire", KEYS[1], ARGV[2])
+end
+return 0
+"""
 
 
 # ---------------------------------------------------------------------------
@@ -148,28 +164,78 @@ async def run_scrape(job_id: str) -> None:
 # Distributed lock
 # ---------------------------------------------------------------------------
 
-async def _acquire_lock() -> bool:
-    """Try to acquire the Redis lock. Returns True on success."""
+async def _acquire_lock() -> str | None:
+    """Try to acquire the Redis lock. Returns owner token on success."""
+    token = str(uuid.uuid4())
     acquired = await redis_client.set(
-        REDIS_LOCK_KEY, "1", nx=True, ex=REDIS_LOCK_TTL
+        REDIS_LOCK_KEY, token, nx=True, ex=REDIS_LOCK_TTL
     )
-    return acquired is not None and acquired is not False
+    if acquired is not None and acquired is not False:
+        return token
+    return None
 
 
-async def _release_lock() -> None:
-    await redis_client.delete(REDIS_LOCK_KEY)
+async def _refresh_lock(lock_token: str) -> bool:
+    """Extend lock TTL only when this worker is still the owner."""
+    refreshed = await redis_client.eval(
+        _LOCK_REFRESH_SCRIPT,
+        1,
+        REDIS_LOCK_KEY,
+        lock_token,
+        str(REDIS_LOCK_TTL),
+    )
+    return bool(refreshed)
+
+
+async def _release_lock(lock_token: str) -> None:
+    """Release the lock only when this worker still owns it."""
+    await redis_client.eval(
+        _LOCK_RELEASE_SCRIPT,
+        1,
+        REDIS_LOCK_KEY,
+        lock_token,
+    )
+
+
+async def _lock_heartbeat(lock_token: str, stop_event: asyncio.Event) -> None:
+    """
+    Keep refreshing the lock while the scrape runs.
+
+    Without heartbeats, long scrape jobs can outlive REDIS_LOCK_TTL and allow
+    a second worker to start; this keeps ownership alive until completion.
+    """
+    refresh_interval = max(5, REDIS_LOCK_TTL // 3)
+    while not stop_event.is_set():
+        try:
+            await asyncio.wait_for(stop_event.wait(), timeout=refresh_interval)
+            break
+        except asyncio.TimeoutError:
+            pass
+
+        if not await _refresh_lock(lock_token):
+            logger.warning("Lost lock ownership while scrape is still running")
+            break
 
 
 async def guarded_scrape(job_id: str) -> None:
     """Run a scrape job only if the lock is free."""
-    if not await _acquire_lock():
+    lock_token = await _acquire_lock()
+    if lock_token is None:
         logger.info("Scrape already running — skipping job %s", job_id)
         await _set_job_status(job_id, status="already_running")
         return
+
+    heartbeat_stop = asyncio.Event()
+    heartbeat_task = asyncio.create_task(_lock_heartbeat(lock_token, heartbeat_stop))
     try:
         await run_scrape(job_id)
     finally:
-        await _release_lock()
+        heartbeat_stop.set()
+        if not heartbeat_task.done():
+            heartbeat_task.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await heartbeat_task
+        await _release_lock(lock_token)
 
 
 # ---------------------------------------------------------------------------
@@ -178,7 +244,6 @@ async def guarded_scrape(job_id: str) -> None:
 
 async def scheduled_scrape() -> None:
     """Called by APScheduler at the configured cron times."""
-    import uuid
     job_id = str(uuid.uuid4())
     logger.info("Scheduled scrape triggered — job_id=%s", job_id)
     await guarded_scrape(job_id)
