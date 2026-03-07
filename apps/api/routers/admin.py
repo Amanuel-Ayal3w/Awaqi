@@ -3,12 +3,20 @@ import json
 import uuid
 from datetime import datetime, timezone
 
+from database import get_session
+from database.models.auth import BaUser
+from database.models.document import Document
+from database.models.document import DocumentStatus as DocStatusEnum
+from database.models.session import Message, MessageRole
+from database.redis_client import redis_client
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from apps.api.deps import get_current_admin
 from apps.api.schemas import (
+    AdminDocumentItem,
+    AdminDocumentList,
     AdminUserItem,
     AdminUserList,
     DocumentStatus,
@@ -17,17 +25,40 @@ from apps.api.schemas import (
     ScraperJobStatus,
     ScraperStatus,
 )
-from database import get_session
-from database.models.auth import BaUser
-from database.models.document import Document, DocumentStatus as DocStatusEnum
-from database.models.session import Message, MessageRole
-from database.redis_client import redis_client
 
 REDIS_TRIGGER_KEY = "scraper:trigger"
 REDIS_LOCK_KEY = "scraper:running"
 REDIS_JOB_PREFIX = "scraper:job:"
 
 router = APIRouter()
+
+
+@router.get("/admin/documents", response_model=AdminDocumentList)
+async def list_admin_documents(
+    limit: int = 100,
+    current_user: BaUser = Depends(get_current_admin),
+    db: AsyncSession = Depends(get_session),
+):
+    del current_user  # endpoint is admin-protected via dependency
+    safe_limit = max(1, min(limit, 500))
+
+    result = await db.execute(
+        select(Document).order_by(Document.created_at.desc()).limit(safe_limit)
+    )
+    documents = result.scalars().all()
+
+    return AdminDocumentList(
+        documents=[
+            AdminDocumentItem(
+                id=str(doc.id),
+                title=doc.title,
+                status=str(getattr(doc.status, "value", doc.status)),
+                source_url=doc.source_url,
+                created_at=doc.created_at.isoformat(),
+            )
+            for doc in documents
+        ]
+    )
 
 
 @router.get("/admin/users", response_model=AdminUserList)

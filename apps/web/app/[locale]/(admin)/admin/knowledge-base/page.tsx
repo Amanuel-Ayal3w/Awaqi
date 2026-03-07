@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useCallback, useEffect, useState } from "react"
 import { DataTable } from "@/components/ui/data-table"
 import { ColumnDef } from "@tanstack/react-table"
 import { Button } from "@/components/ui/button"
@@ -8,12 +8,14 @@ import { Upload, File, Loader2, Trash2, RefreshCw } from "lucide-react"
 import { useDropzone } from "react-dropzone"
 import { cn } from "@/lib/utils"
 import { adminApi } from "@/lib/api"
-import type { DocumentStatus } from "@/types/api"
+import type { AdminDocumentItem, DocumentStatus } from "@/types/api"
 
 type DocumentRow = {
     id: string
     title: string
     status: string
+    source_url?: string | null
+    created_at: string
 }
 
 const columns: ColumnDef<DocumentRow>[] = [
@@ -35,6 +37,27 @@ const columns: ColumnDef<DocumentRow>[] = [
                 {(row.getValue("id") as string).slice(0, 8)}…
             </span>
         ),
+    },
+    {
+        accessorKey: "source_url",
+        header: "Source",
+        cell: ({ row }) => (
+            <span className="text-xs text-muted-foreground truncate block max-w-[280px]">
+                {(row.getValue("source_url") as string | null) ?? "manual upload"}
+            </span>
+        ),
+    },
+    {
+        accessorKey: "created_at",
+        header: "Created",
+        cell: ({ row }) => {
+            const value = row.getValue("created_at") as string
+            return (
+                <span className="text-xs text-muted-foreground">
+                    {new Date(value).toLocaleString()}
+                </span>
+            )
+        },
     },
     {
         accessorKey: "status",
@@ -68,23 +91,38 @@ const columns: ColumnDef<DocumentRow>[] = [
 ]
 
 export default function KnowledgeBasePage() {
-    // Track the number of in-flight uploads rather than a single boolean.
-    // This way the spinner stays active until every concurrent upload finishes,
-    // not just the first one to complete.
     const [uploadCount, setUploadCount] = useState(0)
     const [uploadError, setUploadError] = useState<string | null>(null)
     const [documents, setDocuments] = useState<DocumentRow[]>([])
+    const [isRefreshing, setIsRefreshing] = useState(false)
 
     const isUploading = uploadCount > 0
 
-    const refreshDocuments = () => {
-        // Documents list is populated as uploads come in during this session.
-        // A dedicated GET /v1/admin/documents endpoint can be added later.
-    }
+    const mapDocument = (doc: AdminDocumentItem): DocumentRow => ({
+        id: doc.id,
+        title: doc.title,
+        status: doc.status,
+        source_url: doc.source_url ?? null,
+        created_at: doc.created_at,
+    })
+
+    const refreshDocuments = useCallback(async () => {
+        setIsRefreshing(true)
+        setUploadError(null)
+        try {
+            const result = await adminApi.listDocuments(200)
+            setDocuments(result.documents.map(mapDocument))
+        } catch (err: unknown) {
+            const message = err instanceof Error ? err.message : "Failed to load documents"
+            setUploadError(message)
+        } finally {
+            setIsRefreshing(false)
+        }
+    }, [])
 
     useEffect(() => {
-        refreshDocuments()
-    }, [])
+        void refreshDocuments()
+    }, [refreshDocuments])
 
     const handleUpload = async (file: File) => {
         setUploadCount((n) => n + 1)
@@ -92,15 +130,20 @@ export default function KnowledgeBasePage() {
         try {
             const result: DocumentStatus = await adminApi.uploadDocument(file)
             setDocuments((prev) => [
-                { id: result.doc_id, title: file.name, status: result.status },
+                {
+                    id: result.doc_id,
+                    title: file.name,
+                    status: result.status,
+                    source_url: null,
+                    created_at: new Date().toISOString(),
+                },
                 ...prev,
             ])
+            await refreshDocuments()
         } catch (err: unknown) {
             const message = err instanceof Error ? err.message : "Upload failed"
             setUploadError(message)
         } finally {
-            // Decrement only this file's slot — other concurrent uploads keep
-            // the count above zero and the spinner remains visible.
             setUploadCount((n) => n - 1)
         }
     }
@@ -157,8 +200,14 @@ export default function KnowledgeBasePage() {
             <div className="space-y-4">
                 <div className="flex items-center justify-between">
                     <h2 className="text-xl font-semibold">Uploaded Documents</h2>
-                    <Button variant="outline" size="sm" className="gap-2" onClick={refreshDocuments}>
-                        <RefreshCw className="h-4 w-4" />
+                    <Button
+                        variant="outline"
+                        size="sm"
+                        className="gap-2"
+                        onClick={() => void refreshDocuments()}
+                        disabled={isRefreshing}
+                    >
+                        <RefreshCw className={cn("h-4 w-4", isRefreshing && "animate-spin")} />
                         Refresh
                     </Button>
                 </div>

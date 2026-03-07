@@ -3,9 +3,17 @@
 import os
 
 # ---------------------------------------------------------------------------
-# MoR API base and endpoints (the site is a React SPA backed by REST APIs)
+# MoR source URLs and endpoints (React SPA backed by REST APIs)
 # ---------------------------------------------------------------------------
 MOR_API_BASE = "https://www.mor.gov.et/api"
+MOR_SITE_BASE = "https://www.mor.gov.et"
+
+# Try both host variants in case one path/route is blocked by upstream network
+# policy from a given environment.
+MOR_API_BASE_CANDIDATES: list[str] = [
+    "https://www.mor.gov.et/api",
+    "https://mor.gov.et/api",
+]
 
 API_ENDPOINTS: list[str] = [
     "/domestic-proclamations",
@@ -15,6 +23,14 @@ API_ENDPOINTS: list[str] = [
     "/custom-directives",
     "/custom-regulations",
     "/recent-custom-proclamations-regulations",
+]
+
+# Fallback HTML pages that historically hosted legal PDFs in a document library.
+LEGACY_HTML_SOURCES: list[str] = [
+    "/web/mor/proclamations",
+    "/web/mor/regulations",
+    "/web/mor/directives",
+    "/web/mor/forms",
 ]
 
 # ---------------------------------------------------------------------------

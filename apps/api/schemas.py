@@ -65,6 +65,18 @@ class ScraperJobStatus(BaseModel):
     error: Optional[str] = None
 
 
+class AdminDocumentItem(BaseModel):
+    id: str
+    title: str
+    status: str
+    source_url: Optional[str] = None
+    created_at: str
+
+
+class AdminDocumentList(BaseModel):
+    documents: List[AdminDocumentItem]
+
+
 class AdminUserItem(BaseModel):
     id: str
     name: Optional[str] = None
