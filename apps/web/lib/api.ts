@@ -45,7 +45,8 @@ apiClient.interceptors.response.use(
     (error) => {
         if (error.response?.status === 401 && typeof window !== "undefined") {
             const isAdminApi = error.config?.url?.startsWith('/v1/admin');
-            const locale = window.location.pathname.split("/")[1] ?? "en";
+            const pathFirstSegment = window.location.pathname.split("/").filter(Boolean)[0];
+            const locale = pathFirstSegment === "en" || pathFirstSegment === "am" ? pathFirstSegment : "en";
             window.location.href = isAdminApi ? `/${locale}/admin/login` : `/${locale}/login`;
         }
         return Promise.reject(error);
