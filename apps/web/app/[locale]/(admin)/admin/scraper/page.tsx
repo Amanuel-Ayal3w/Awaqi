@@ -1,14 +1,14 @@
 "use client"
 
-import { useState, useEffect, useRef } from "react"
+import { useEffect, useRef, useState } from "react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { ScrollArea } from "@/components/ui/scroll-area"
-import { Play, Square, Loader2, Terminal } from "lucide-react"
+import { Loader2, Play, Terminal } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { adminApi } from "@/lib/api"
-import type { ScraperStatus } from "@/types/api"
+import type { ScraperJobStatus, ScraperStatus } from "@/types/api"
 
 type LogEntry = {
     timestamp: string
@@ -21,25 +21,23 @@ const INITIAL_LOGS: LogEntry[] = [
 ]
 
 export default function ScraperControlPage() {
-    const [status, setStatus] = useState<"IDLE" | "RUNNING" | "STOPPING">("IDLE")
+    const [status, setStatus] = useState<"IDLE" | "RUNNING" | "COMPLETED" | "FAILED">("IDLE")
     const [logs, setLogs] = useState<LogEntry[]>(INITIAL_LOGS)
     const [duration, setDuration] = useState(0)
     const [currentJobId, setCurrentJobId] = useState<string | null>(null)
+    const [jobStatus, setJobStatus] = useState<ScraperJobStatus | null>(null)
     const [triggerError, setTriggerError] = useState<string | null>(null)
     const scrollRef = useRef<HTMLDivElement>(null)
+    const lastRemoteStatusRef = useRef<string | null>(null)
 
-    // Duration timer while running
     useEffect(() => {
         let interval: NodeJS.Timeout
         if (status === "RUNNING") {
             interval = setInterval(() => setDuration((prev) => prev + 1), 1000)
-        } else {
-            setDuration(0)
         }
         return () => clearInterval(interval)
     }, [status])
 
-    // Auto-scroll logs to bottom
     useEffect(() => {
         const viewport = scrollRef.current?.querySelector("[data-radix-scroll-area-viewport]")
         if (viewport) viewport.scrollTop = viewport.scrollHeight
@@ -52,13 +50,80 @@ export default function ScraperControlPage() {
         ])
     }
 
+    useEffect(() => {
+        if (!currentJobId || status !== "RUNNING") {
+            return
+        }
+
+        let cancelled = false
+
+        const poll = async () => {
+            try {
+                const result = await adminApi.getScraperStatus(currentJobId)
+                if (cancelled) return
+
+                setJobStatus(result)
+
+                if (lastRemoteStatusRef.current !== result.status) {
+                    lastRemoteStatusRef.current = result.status
+                    appendLog("INFO", `Job status: ${result.status}`)
+                }
+
+                if (result.status === "completed") {
+                    setStatus("COMPLETED")
+                    setDuration(0)
+                    appendLog(
+                        "INFO",
+                        `Completed. Found ${result.documents_found}, new ${result.documents_new}.`
+                    )
+                } else if (result.status === "failed") {
+                    setStatus("FAILED")
+                    setDuration(0)
+                    appendLog("ERROR", `Failed: ${result.error ?? "unknown error"}`)
+                } else if (result.status === "already_running") {
+                    setStatus("IDLE")
+                    setDuration(0)
+                    appendLog("WARN", "Another scraper run is already active.")
+                }
+            } catch (err: unknown) {
+                if (cancelled) return
+                const maybeHttpErr = err as { response?: { status?: number } }
+                if (maybeHttpErr.response?.status === 404) {
+                    // Scraper may still be queued before first status is written.
+                    return
+                }
+                const message = err instanceof Error ? err.message : "Unable to fetch scrape status"
+                appendLog("WARN", message)
+            }
+        }
+
+        void poll()
+        const interval = setInterval(() => void poll(), 3000)
+
+        return () => {
+            cancelled = true
+            clearInterval(interval)
+        }
+    }, [currentJobId, status])
+
     const handleStart = async () => {
         setTriggerError(null)
         try {
             const result: ScraperStatus = await adminApi.triggerScraper()
+            setDuration(0)
+            setJobStatus(null)
+            lastRemoteStatusRef.current = null
+
+            if (result.status === "already_running") {
+                setCurrentJobId(null)
+                setStatus("IDLE")
+                appendLog("WARN", "Scraper is already running in another worker.")
+                return
+            }
+
             setCurrentJobId(result.job_id)
             setStatus("RUNNING")
-            appendLog("INFO", `Scraper job started — job_id: ${result.job_id}`)
+            appendLog("INFO", `Scraper job queued — job_id: ${result.job_id}`)
         } catch (err: unknown) {
             const msg = err instanceof Error ? err.message : "Failed to start scraper"
             setTriggerError(msg)
@@ -66,14 +131,11 @@ export default function ScraperControlPage() {
         }
     }
 
-    const handleStop = () => {
-        setStatus("STOPPING")
-        appendLog("WARN", "Stop requested by admin…")
-        setTimeout(() => {
-            setStatus("IDLE")
-            appendLog("WARN", "Scraper stopped.")
-        }, 1500)
-    }
+    const humanStatus =
+        status === "RUNNING" ? "Running"
+            : status === "COMPLETED" ? "Completed"
+                : status === "FAILED" ? "Failed"
+                    : "Idle"
 
     return (
         <div className="space-y-6">
@@ -105,13 +167,14 @@ export default function ScraperControlPage() {
                                     <span className={cn(
                                         "relative inline-flex rounded-full h-3 w-3",
                                         status === "RUNNING" ? "bg-green-500"
-                                            : status === "IDLE" ? "bg-gray-400"
-                                                : "bg-yellow-500"
+                                            : status === "COMPLETED" ? "bg-blue-500"
+                                                : status === "FAILED" ? "bg-red-500"
+                                                    : "bg-gray-400"
                                     )} />
                                 </div>
                                 <div className="space-y-1">
                                     <p className="font-medium leading-none">
-                                        {status === "RUNNING" ? "Running" : status === "IDLE" ? "Idle" : "Stopping…"}
+                                        {humanStatus}
                                     </p>
                                     {status === "RUNNING" && (
                                         <p className="text-sm text-muted-foreground">Duration: {duration}s</p>
@@ -124,25 +187,23 @@ export default function ScraperControlPage() {
                                 </div>
                             </div>
                             <div className="flex gap-2">
-                                {status === "IDLE" ? (
-                                    <Button onClick={handleStart} className="gap-2">
-                                        <Play className="h-4 w-4" /> Start Scraper
-                                    </Button>
-                                ) : (
-                                    <Button
-                                        variant="destructive"
-                                        onClick={handleStop}
-                                        disabled={status === "STOPPING"}
-                                        className="gap-2"
-                                    >
-                                        {status === "STOPPING" ? (
+                                <Button
+                                    onClick={handleStart}
+                                    className="gap-2"
+                                    disabled={status === "RUNNING"}
+                                >
+                                    {status === "RUNNING" ? (
+                                        <>
                                             <Loader2 className="h-4 w-4 animate-spin" />
-                                        ) : (
-                                            <Square className="h-4 w-4" />
-                                        )}
-                                        Stop
-                                    </Button>
-                                )}
+                                            Running…
+                                        </>
+                                    ) : (
+                                        <>
+                                            <Play className="h-4 w-4" />
+                                            Start Scraper
+                                        </>
+                                    )}
+                                </Button>
                             </div>
                         </div>
 
@@ -150,9 +211,25 @@ export default function ScraperControlPage() {
                             <h4 className="text-sm font-medium">Schedule</h4>
                             <div className="flex items-center justify-between text-sm text-muted-foreground border rounded-md p-3">
                                 <span>Next scheduled run:</span>
-                                <span className="font-mono">Tomorrow, 00:00 EAT</span>
+                                <span className="font-mono">06:00 & 12:00 EAT</span>
                             </div>
                         </div>
+
+                        {jobStatus && (
+                            <div className="space-y-2">
+                                <h4 className="text-sm font-medium">Latest Job</h4>
+                                <div className="grid grid-cols-2 gap-2 text-sm">
+                                    <div className="rounded-md border p-2">
+                                        <p className="text-muted-foreground">Found</p>
+                                        <p className="font-semibold">{jobStatus.documents_found}</p>
+                                    </div>
+                                    <div className="rounded-md border p-2">
+                                        <p className="text-muted-foreground">New</p>
+                                        <p className="font-semibold">{jobStatus.documents_new}</p>
+                                    </div>
+                                </div>
+                            </div>
+                        )}
                     </CardContent>
                 </Card>
 
@@ -180,9 +257,7 @@ export default function ScraperControlPage() {
                                     {log.message}
                                 </div>
                             ))}
-                            {status === "RUNNING" && (
-                                <div className="animate-pulse">_</div>
-                            )}
+                            {status === "RUNNING" && <div className="animate-pulse">_</div>}
                         </ScrollArea>
                         <div className="absolute top-2 right-4">
                             <Button

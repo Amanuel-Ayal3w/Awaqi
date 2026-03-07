@@ -56,6 +56,28 @@ export interface ScraperStatus {
     status: string;
 }
 
+export interface ScraperJobStatus {
+    job_id: string;
+    status: string;
+    documents_found: number;
+    documents_new: number;
+    started_at?: string | null;
+    finished_at?: string | null;
+    error?: string | null;
+}
+
+export interface AdminDocumentItem {
+    id: string;
+    title: string;
+    status: string;
+    source_url?: string | null;
+    created_at: string;
+}
+
+export interface AdminDocumentList {
+    documents: AdminDocumentItem[];
+}
+
 export interface AdminUserItem {
     id: string;
     name?: string | null;

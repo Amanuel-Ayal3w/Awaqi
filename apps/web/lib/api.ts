@@ -2,6 +2,7 @@ import axios from "axios";
 import { authClient } from "@/lib/auth-client";
 import { customerAuthClient } from "@/lib/customer-auth-client";
 import type {
+    AdminDocumentList,
     AdminUserList,
     ChatMessage,
     ChatRequest,
@@ -9,6 +10,7 @@ import type {
     DocumentStatus,
     FeedbackRequest,
     LogEntryList,
+    ScraperJobStatus,
     ScraperStatus,
 } from "@/types/api";
 
@@ -94,6 +96,20 @@ export const adminApi = {
 
     triggerScraper: async (): Promise<ScraperStatus> => {
         const { data } = await apiClient.post<ScraperStatus>("/v1/admin/scrape");
+        return data;
+    },
+
+    getScraperStatus: async (jobId: string): Promise<ScraperJobStatus> => {
+        const { data } = await apiClient.get<ScraperJobStatus>(
+            `/v1/admin/scrape/status?job_id=${encodeURIComponent(jobId)}`
+        );
+        return data;
+    },
+
+    listDocuments: async (limit = 100): Promise<AdminDocumentList> => {
+        const { data } = await apiClient.get<AdminDocumentList>(
+            `/v1/admin/documents?limit=${limit}`
+        );
         return data;
     },
 
