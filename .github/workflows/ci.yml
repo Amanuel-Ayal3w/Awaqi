@@ -32,3 +32,5 @@ jobs:
       - name: Build (includes TypeScript check)
         run: npm run build
         working-directory: apps/web
+        env:
+          BETTER_AUTH_SECRET: ${{ secrets.BETTER_AUTH_SECRET || 'doh0HF9suOVqBhm6rb2UYu+fcVjtgprQlwO4Zlf4Whs=' }}
