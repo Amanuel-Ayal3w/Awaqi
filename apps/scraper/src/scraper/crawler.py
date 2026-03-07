@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 import logging
 import re
 import time
@@ -56,26 +55,6 @@ _BUNDLE_API_PATH_RE = re.compile(
     r"""["'](?P<path>/(?:domestic|custom|recent)[a-z0-9\-_/\$]*)["']""",
     flags=re.IGNORECASE,
 )
-
-
-def _debug_log(hypothesis_id: str, location: str, message: str, data: dict) -> None:
-    try:
-        open("/opt/cursor/logs/debug.log", "a").write(
-            json.dumps(
-                {
-                    "hypothesisId": hypothesis_id,
-                    "location": location,
-                    "message": message,
-                    "data": data,
-                    "timestamp": int(time.time() * 1000),
-                }
-            )
-            + "\n"
-        )
-    except Exception:
-        # Best-effort debug instrumentation only.
-        pass
-
 
 @dataclass
 class PdfInfo:
@@ -168,55 +147,15 @@ async def _fetch_endpoint(
 ) -> tuple[list[PdfInfo], str | None]:
     """Fetch one API endpoint and return extracted PDF entries + error type."""
     url = f"{api_base.rstrip('/')}/{endpoint.lstrip('/')}"
-    # region agent log
-    _debug_log(
-        "A",
-        "crawler.py:_fetch_endpoint",
-        "fetch_start",
-        {"endpoint": endpoint, "api_base": api_base, "url": url},
-    )
-    # endregion
     logger.info("Fetching %s", url)
     started = time.perf_counter()
     try:
         resp = await client.get(url, follow_redirects=True, timeout=_DISCOVERY_TIMEOUT)
         elapsed_ms = int((time.perf_counter() - started) * 1000)
-        # region agent log
-        _debug_log(
-            "A",
-            "crawler.py:_fetch_endpoint",
-            "fetch_response",
-            {
-                "endpoint": endpoint,
-                "api_base": api_base,
-                "status": resp.status_code,
-                "content_type": resp.headers.get("content-type", ""),
-                "final_url": str(resp.url),
-                "body_len": len(resp.content),
-                "elapsed_ms": elapsed_ms,
-            },
-        )
-        # endregion
         resp.raise_for_status()
         data = resp.json()
     except httpx.HTTPError as exc:
         elapsed_ms = int((time.perf_counter() - started) * 1000)
-        # region agent log
-        _debug_log(
-            "A",
-            "crawler.py:_fetch_endpoint",
-            "fetch_http_error",
-            {
-                "endpoint": endpoint,
-                "api_base": api_base,
-                "error": str(exc),
-                "error_type": type(exc).__name__,
-                "error_repr": repr(exc),
-                "request_url": str(exc.request.url) if getattr(exc, "request", None) else None,
-                "elapsed_ms": elapsed_ms,
-            },
-        )
-        # endregion
         logger.warning(
             "Failed to fetch %s (%s after %dms): %s",
             endpoint,
@@ -227,21 +166,6 @@ async def _fetch_endpoint(
         return [], type(exc).__name__
     except Exception as exc:
         elapsed_ms = int((time.perf_counter() - started) * 1000)
-        # region agent log
-        _debug_log(
-            "B",
-            "crawler.py:_fetch_endpoint",
-            "fetch_parse_error",
-            {
-                "endpoint": endpoint,
-                "api_base": api_base,
-                "error": str(exc),
-                "error_type": type(exc).__name__,
-                "error_repr": repr(exc),
-                "elapsed_ms": elapsed_ms,
-            },
-        )
-        # endregion
         logger.warning("Failed to parse payload from %s: %s", url, exc)
         return [], type(exc).__name__
 
@@ -274,7 +198,7 @@ async def _extract_dynamic_endpoints(client: httpx.AsyncClient) -> list[str]:
         if tag.get("src")
     ]
 
-    for script_url in script_sources[:6]:
+    for script_url in script_sources[:20]:
         if not script_url:
             continue
         try:
@@ -295,14 +219,8 @@ async def _extract_dynamic_endpoints(client: httpx.AsyncClient) -> list[str]:
     dynamic = sorted(
         endpoint for endpoint in discovered if endpoint not in set(API_ENDPOINTS)
     )
-    # region agent log
-    _debug_log(
-        "D",
-        "crawler.py:_extract_dynamic_endpoints",
-        "dynamic_endpoints_discovered",
-        {"count": len(dynamic), "sample": dynamic[:8]},
-    )
-    # endregion
+    if dynamic:
+        logger.info("Discovered %d dynamic API endpoint(s) from MoR bundle", len(dynamic))
     return dynamic
 
 
@@ -364,14 +282,6 @@ async def _discover_from_html_sources(client: httpx.AsyncClient) -> list[PdfInfo
                 )
             )
 
-    # region agent log
-    _debug_log(
-        "E",
-        "crawler.py:_discover_from_html_sources",
-        "html_fallback_results",
-        {"count": len(results), "sample": [item.url for item in results[:5]]},
-    )
-    # endregion
     return results
 
 
@@ -420,17 +330,6 @@ async def discover_all_pdfs(
     client: httpx.AsyncClient | None = None,
 ) -> list[PdfInfo]:
     """Query all MoR API endpoints and return a de-duplicated list of PDFs."""
-    # region agent log
-    _debug_log(
-        "C",
-        "crawler.py:discover_all_pdfs",
-        "discover_entry",
-        {
-            "configured_endpoints_count": len(API_ENDPOINTS),
-            "api_bases_count": len({MOR_API_BASE, *MOR_API_BASE_CANDIDATES}),
-        },
-    )
-    # endregion
     own_client = client is None
     if own_client:
         client = httpx.AsyncClient(
@@ -458,14 +357,6 @@ async def discover_all_pdfs(
         if own_client:
             await client.aclose()
 
-    # region agent log
-    _debug_log(
-        "C",
-        "crawler.py:discover_all_pdfs",
-        "discover_exit",
-        {"unique_pdf_count": len(all_pdfs)},
-    )
-    # endregion
     logger.info("Total unique PDFs discovered: %d", len(all_pdfs))
     return all_pdfs
 
