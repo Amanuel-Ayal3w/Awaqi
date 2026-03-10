@@ -1,5 +1,6 @@
 import hashlib
 import json
+import os
 import uuid
 from datetime import datetime, timezone
 
@@ -29,8 +30,57 @@ from apps.api.schemas import (
 REDIS_TRIGGER_KEY = "scraper:trigger"
 REDIS_LOCK_KEY = "scraper:running"
 REDIS_JOB_PREFIX = "scraper:job:"
+MAX_UPLOAD_BYTES = int(os.getenv("MAX_UPLOAD_BYTES", str(10 * 1024 * 1024)))
+UPLOAD_READ_CHUNK_SIZE = 1024 * 1024
+ALLOWED_UPLOAD_MIME_TYPES = {"application/pdf", "application/x-pdf"}
 
 router = APIRouter()
+
+
+def _role_value(user: BaUser) -> str:
+    return str(getattr(user.role, "value", user.role))
+
+
+def _require_superadmin(user: BaUser) -> None:
+    if _role_value(user) != "superadmin":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Superadmin role is required for this action",
+        )
+
+
+def _validate_upload_metadata(file: UploadFile) -> None:
+    filename = (file.filename or "").strip()
+    if not filename:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Filename is required",
+        )
+    if not filename.lower().endswith(".pdf"):
+        raise HTTPException(
+            status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
+            detail="Only PDF files are accepted",
+        )
+    if file.content_type and file.content_type not in ALLOWED_UPLOAD_MIME_TYPES:
+        raise HTTPException(
+            status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
+            detail="Unsupported content type; expected application/pdf",
+        )
+
+
+async def _sha256_with_size_limit(file: UploadFile) -> str:
+    total_bytes = 0
+    digest = hashlib.sha256()
+    while chunk := await file.read(UPLOAD_READ_CHUNK_SIZE):
+        total_bytes += len(chunk)
+        if total_bytes > MAX_UPLOAD_BYTES:
+            raise HTTPException(
+                status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+                detail=f"File exceeds max allowed size of {MAX_UPLOAD_BYTES} bytes",
+            )
+        digest.update(chunk)
+    await file.seek(0)
+    return digest.hexdigest()
 
 
 @router.get("/admin/documents", response_model=AdminDocumentList)
@@ -92,6 +142,8 @@ async def delete_admin_user(
     current_user: BaUser = Depends(get_current_admin),
     db: AsyncSession = Depends(get_session),
 ):
+    _require_superadmin(current_user)
+
     try:
         target_uuid = uuid.UUID(user_id)
     except ValueError:
@@ -125,8 +177,9 @@ async def upload_document(
     current_user: BaUser = Depends(get_current_admin),
     db: AsyncSession = Depends(get_session),
 ):
-    content = await file.read()
-    file_hash = hashlib.sha256(content).hexdigest()
+    _require_superadmin(current_user)
+    _validate_upload_metadata(file)
+    file_hash = await _sha256_with_size_limit(file)
 
     # Check for duplicate by file hash
     existing = await db.execute(
@@ -144,7 +197,10 @@ async def upload_document(
         db.add(doc)
         await db.flush()
 
-    return DocumentStatus(doc_id=str(doc.id), status=doc.status)
+    return DocumentStatus(
+        doc_id=str(doc.id),
+        status=str(getattr(doc.status, "value", doc.status)),
+    )
 
 
 @router.get("/admin/logs", response_model=LogEntryList)
@@ -186,6 +242,8 @@ async def get_logs(
 async def trigger_scrape(
     current_user: BaUser = Depends(get_current_admin),
 ):
+    _require_superadmin(current_user)
+
     is_running = await redis_client.get(REDIS_LOCK_KEY)
     if is_running:
         return ScraperStatus(job_id="", status="already_running")

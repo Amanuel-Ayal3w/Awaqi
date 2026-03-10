@@ -71,10 +71,6 @@ async def run_async_migrations() -> None:
     connectable = create_async_engine(database_url, echo=False)
 
     async with connectable.connect() as connection:
-        # Enable pgvector before running any migration
-        await connection.execute(
-            __import__("sqlalchemy").text("CREATE EXTENSION IF NOT EXISTS vector")
-        )
         await connection.run_sync(do_run_migrations)
 
     await connectable.dispose()
