@@ -107,8 +107,8 @@ The API will be available at `http://localhost:8000`.
 
 | Method | Path | Auth | Description |
 |---|---|---|---|
-| `POST` | `/v1/chat/send` | None | Send a message and get an AI response |
-| `GET` | `/v1/chat/history/{session_id}` | None | Retrieve message history for a session |
+| `POST` | `/v1/chat/send` | None | Send a message and get an AI response; returns a signed `session_token` |
+| `GET` | `/v1/chat/history/{session_id}` | `X-Session-Token` (guest) | Retrieve message history for a session |
 | `POST` | `/v1/chat/feedback/{message_id}` | None | Submit thumbs-up/down feedback on a message |
 
 ### Admin (`/v1/admin`) — all routes require a valid session token
@@ -129,6 +129,10 @@ The token can be provided as:
 - `Authorization: Bearer <token>` header
 - `better-auth.session_token` cookie (set automatically by the Next.js frontend)
 
+Guest chat sessions are protected with a server-signed token:
+- `POST /v1/chat/send` returns `session_token`
+- Clients must send `X-Session-Token: <session_token>` when reusing a guest `session_id` and when calling `GET /v1/chat/history/{session_id}`
+
 ### Request/Response Schemas
 
 Defined in `schemas.py`:
@@ -136,7 +140,7 @@ Defined in `schemas.py`:
 | Schema | Used by |
 |---|---|
 | `ChatRequest` | `POST /v1/chat/send` — `{message, session_id, language?}` |
-| `ChatResponse` | Response — `{response_text, citations[], confidence_score}` |
+| `ChatResponse` | Response — `{response_text, citations[], confidence_score, session_token?}` |
 | `ChatMessage` | `GET /v1/chat/history/*` — `{role, content, timestamp}` |
 | `FeedbackRequest` | `POST /v1/chat/feedback/*` — `{score, comment?}` |
 | `DocumentStatus` | `POST /v1/admin/upload` — `{doc_id, status}` |

@@ -18,6 +18,7 @@ class ChatResponse(BaseModel):
     response_text: str
     citations: List[Citation]
     confidence_score: float
+    session_token: Optional[str] = None
 
 class ChatMessage(BaseModel):
     role: str
