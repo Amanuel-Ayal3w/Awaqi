@@ -114,9 +114,14 @@ class DocumentChunk(Base):
         # Created AFTER initial data load for best performance:
         #   CREATE INDEX ON document_chunks USING ivfflat (embedding vector_cosine_ops) WITH (lists = 100);
         Index("ix_document_chunks_embedding_ivfflat", "embedding", postgresql_using="ivfflat"),
-        # GIN index for fast PostgreSQL full-text search on the content column
-        Index("ix_document_chunks_content_fts", "content", postgresql_using="gin",
+        # GIN trigram index for fuzzy text search on the content column
+        Index("ix_document_chunks_content_trgm", "content", postgresql_using="gin",
               postgresql_ops={"content": "gin_trgm_ops"}),
+        UniqueConstraint(
+            "document_id",
+            "chunk_index",
+            name="uq_document_chunks_document_chunk_index",
+        ),
     )
 
     def __repr__(self) -> str:

@@ -1,7 +1,7 @@
 """
 Better Auth ORM models — BaUser and BaSession.
 
-These map to the ba_user and ba_session tables created in migration 0002.
+These map to the ba_user and ba_session tables created in migration 0001.
 Better Auth uses camelCase column names by default; SQLAlchemy mapped_column
 name= parameters handle the Python snake_case ↔ DB camelCase translation.
 """
@@ -62,7 +62,9 @@ class BaUser(Base):
     )
 
     chat_sessions: Mapped[list["ChatSession"]] = relationship(  # noqa: F821
-        "ChatSession", back_populates="user", cascade="all, delete-orphan"
+        "ChatSession",
+        back_populates="user",
+        passive_deletes=True,
     )
 
     def __repr__(self) -> str:

@@ -20,13 +20,9 @@ EMBEDDING_DIM = 1024
 
 
 def upgrade() -> None:
-    bind = op.get_bind()
-
-    # ── Extensions (cannot run inside a transaction in PostgreSQL) ────────────
-    bind.execute(sa.text("COMMIT"))   # exit Alembic's open transaction
-    bind.execute(sa.text("CREATE EXTENSION IF NOT EXISTS vector"))
-    bind.execute(sa.text("CREATE EXTENSION IF NOT EXISTS pg_trgm"))
-    bind.execute(sa.text("BEGIN"))    # re-open transaction for all DDL below
+    # ── Extensions ──────────────────────────────────────────────────────────────
+    op.execute(sa.text("CREATE EXTENSION IF NOT EXISTS vector"))
+    op.execute(sa.text("CREATE EXTENSION IF NOT EXISTS pg_trgm"))
 
     # ── documents ─────────────────────────────────────────────────────────────
     status_enum = sa.Enum("pending", "indexed", "failed", name="document_status")
@@ -164,13 +160,11 @@ def upgrade() -> None:
     )
     op.create_index("ix_feedback_message_id", "feedback", ["message_id"])
 
-    # ── IVFFlat ANN index (cannot run inside a transaction) ───────────────────
-    bind.execute(sa.text("COMMIT"))
-    bind.execute(sa.text(
+    # ── IVFFlat ANN index ──────────────────────────────────────────────────────
+    op.execute(sa.text(
         "CREATE INDEX IF NOT EXISTS ix_document_chunks_embedding_ivfflat "
         "ON document_chunks USING ivfflat (embedding vector_cosine_ops) WITH (lists = 100)"
     ))
-    bind.execute(sa.text("BEGIN"))
 
 
 def downgrade() -> None:

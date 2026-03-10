@@ -10,7 +10,7 @@ import uuid
 from datetime import datetime, timezone
 from enum import Enum as PyEnum
 
-from sqlalchemy import DateTime, Enum, Float, ForeignKey, String, Text
+from sqlalchemy import CheckConstraint, DateTime, Enum, Float, ForeignKey, String, Text
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -36,8 +36,8 @@ class ChatSession(Base):
     """
     Represents one multi-turn conversation thread.
 
-    Guest sessions have user_id=None and are kept alive by Redis TTL.
-    Admin sessions are persisted here permanently.
+    Guest sessions have user_id=None.
+    Authenticated admin sessions can be linked via user_id.
     """
 
     __tablename__ = "chat_sessions"
@@ -106,6 +106,13 @@ class Message(Base):
     confidence_score: Mapped[float | None] = mapped_column(Float, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc)
+    )
+
+    __table_args__ = (
+        CheckConstraint(
+            "(confidence_score IS NULL) OR (confidence_score >= 0 AND confidence_score <= 1)",
+            name="ck_messages_confidence_score_range",
+        ),
     )
 
     # Relationships
