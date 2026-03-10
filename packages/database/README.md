@@ -11,7 +11,8 @@ packages/database/
 │   ├── env.py                     # Async migration runner
 │   └── versions/
 │       ├── 0001_initial_schema.py # Core tables
-│       └── 0002_better_auth_tables.py # Auth tables (replaces admin_users)
+│       ├── 0003_cu_auth_tables.py # Customer auth tables
+│       └── 0004_data_quality_constraints.py # Constraint hardening
 ├── src/database/
 │   ├── __init__.py                # Public API exports
 │   ├── base.py                    # SQLAlchemy DeclarativeBase
@@ -114,7 +115,8 @@ uv run alembic upgrade head
 
 This creates all tables in order:
 1. `0001_initial_schema` — documents, document_chunks, chat_sessions, messages, feedback, and the pgvector/pg_trgm extensions
-2. `0002_better_auth_tables` — ba_user, ba_session, ba_account, ba_verification; migrates the `chat_sessions` FK from the old `admin_users` table to `ba_user`
+2. `0003_cu_auth_tables` — cu_user, cu_session, cu_account, cu_verification for customer auth
+3. `0004_data_quality_constraints` — adds message confidence range check and unique `(document_id, chunk_index)` on document chunks
 
 ### 5. Verify
 
@@ -133,7 +135,7 @@ asyncio.run(check())
 "
 ```
 
-Expected output should list: `ba_user`, `ba_session`, `ba_account`, `ba_verification`, `documents`, `document_chunks`, `chat_sessions`, `messages`, `feedback`.
+Expected output should list: `ba_user`, `ba_session`, `ba_account`, `ba_verification`, `cu_user`, `cu_session`, `cu_account`, `cu_verification`, `documents`, `document_chunks`, `chat_sessions`, `messages`, `feedback`.
 
 ## Usage in other packages
 
@@ -172,7 +174,6 @@ async def example(redis: aioredis.Redis = Depends(get_redis)):
 ```
 
 Constants available:
-- `GUEST_SESSION_TTL` — 10 minutes
 - `RATE_LIMIT_WINDOW` — 10 minutes
 - `RATE_LIMIT_MAX` — 15 requests per window per IP
 

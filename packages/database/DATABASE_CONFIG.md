@@ -45,7 +45,6 @@
 │  └── models/                                                            │
 │      ├── __init__.py      ← Model re-exports                            │
 │      ├── auth.py          ← BaUser, BaSession (Better Auth)             │
-│      ├── user.py          ← AdminUser (legacy, kept for ref)            │
 │      ├── document.py      ← Document, DocumentChunk (+pgvector)         │
 │      └── session.py       ← ChatSession, Message, Feedback              │
 │                                                                         │
@@ -54,7 +53,8 @@
 │  ├── alembic.ini          ← Alembic config                              │
 │  └── versions/                                                          │
 │      ├── 0001_initial_schema.py                                         │
-│      └── 0002_better_auth_tables.py                                     │
+│      ├── 0003_cu_auth_tables.py                                         │
+│      └── 0004_data_quality_constraints.py                               │
 └─────────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -63,7 +63,7 @@ Two databases back the application:
 | Database | Technology | Purpose |
 |---|---|---|
 | **Primary DB** | PostgreSQL + pgvector | Persistent storage: users, documents, RAG chunks, chat history |
-| **Cache / Rate-limit** | Redis | Guest session TTL, IP rate-limiting counters |
+| **Cache / Rate-limit** | Redis | Scraper coordination state, IP rate-limiting counters |
 
 ---
 
@@ -174,7 +174,6 @@ A single shared pool is created at module import time and reused across all requ
 
 | Constant | Value | Purpose |
 |---|---|---|
-| `GUEST_SESSION_TTL` | 600 s (10 min) | Guest chat history auto-expiry |
 | `RATE_LIMIT_WINDOW` | 600 s (10 min) | Rolling window for rate limiting |
 | `RATE_LIMIT_MAX` | 15 requests | Max requests per IP per window |
 
@@ -182,8 +181,8 @@ A single shared pool is created at module import time and reused across all requ
 
 | Usage | Key format | Example |
 |---|---|---|
-| Guest chat history | `session:<uuid>` | `session:abc123-...` |
 | IP rate-limit counter | `rate:<ip>` | `rate:192.168.1.1` |
+| Scraper coordination | `scraper:<key>` | `scraper:running` |
 
 ### FastAPI Dependency
 
@@ -259,14 +258,6 @@ One row per active browser session. FastAPI's `get_current_admin` dependency val
 | `user_agent` | `userAgent` | TEXT | nullable |
 | `created_at` | `createdAt` | TIMESTAMPTZ | NOT NULL |
 | `updated_at` | `updatedAt` | TIMESTAMPTZ | NOT NULL |
-
----
-
-### AdminUser (legacy)
-
-**Table:** `admin_users` | **File:** [`models/user.py`](file:///home/amanuel/Desktop/Awaqi/packages/database/src/database/models/user.py)
-
-> ⚠️ **This table was dropped in migration `0002`** when Better Auth replaced the homegrown auth system. The ORM model is retained in the codebase for reference but the table no longer exists in a migrated database.
 
 ---
 
@@ -439,24 +430,32 @@ All enums are created explicitly in migration `0001` so Alembic autogenerate can
 
 Creates all base tables and extensions:
 - `documents`, `document_chunks` (with pgvector + GIN indexes)
-- `admin_users` (original homegrown auth — see 0002)
+- `ba_user`, `ba_session`, `ba_account`, `ba_verification` (admin auth)
 - `chat_sessions`, `messages`, `feedback`
 - All 5 PostgreSQL enum types
 - Both PostgreSQL extensions (`vector`, `pg_trgm`)
 
-### `0002` — Better Auth Migration
-**Date:** 2026-02-24 | **Revises:** `0001`
+### `0003` — Customer Auth Tables
+**Date:** 2026-03-02 | **Revises:** `0001`
 
-Replaces the homegrown `admin_users` table with the Better Auth table set:
+Adds Better Auth tables for customer-facing authentication:
 
 | Action | Table |
 |---|---|
-| ✅ Created | `ba_user` (reuses `admin_role` enum, adds `emailVerified`, `image`, camelCase timestamps) |
-| ✅ Created | `ba_session` (token-based sessions) |
-| ✅ Created | `ba_account` (OAuth provider accounts, bcrypt hash) |
-| ✅ Created | `ba_verification` (email verification tokens) |
-| 🔄 Updated | `chat_sessions.user_id` FK: `admin_users.id` → `ba_user.id` |
-| ❌ Dropped | `admin_users` |
+| ✅ Created | `cu_user` |
+| ✅ Created | `cu_session` |
+| ✅ Created | `cu_account` |
+| ✅ Created | `cu_verification` |
+
+### `0004` — Data Quality Constraints
+**Date:** 2026-03-10 | **Revises:** `0003`
+
+Adds schema constraints to protect data integrity:
+
+| Constraint | Table |
+|---|---|
+| `uq_document_chunks_document_chunk_index` | `document_chunks(document_id, chunk_index)` |
+| `ck_messages_confidence_score_range` | `messages.confidence_score` in `[0, 1]` or `NULL` |
 
 ### Running Migrations
 
@@ -501,17 +500,17 @@ from database import ChatSession, Message, Feedback
 
 ## Known Issues & Notes
 
-### ⚠️ `AdminUser` model vs. DB state mismatch
+### ✅ Legacy `AdminUser` model cleanup
 
-The `user.py` ORM model (`AdminUser` / table `admin_users`) is still present in the codebase, but **migration `0002` dropped this table**. If the ORM model is accidentally included in a schema diff (e.g., via `alembic revision --autogenerate`), Alembic will try to recreate `admin_users`. The model should either be deleted or excluded from autogenerate.
+The legacy `AdminUser` ORM model (`admin_users`) has been removed to match the live schema, which uses Better Auth-backed `ba_*` tables.
 
 ### ⚠️ IVFFlat index quality
 
 The `ix_document_chunks_embedding_ivfflat` index uses `lists=100`, which is suitable for ~1M vectors. If the initial bulk load has not yet been performed, the index should be dropped and recreated post-load.
 
-### ⚠️ `chat_sessions` references `BaSession` in ORM but `AdminUser` still in migration `0001`
+### ℹ️ `chat_sessions.user_id` foreign key target
 
-Migration `0001` creates `chat_sessions.user_id` referencing `admin_users.id`. Migration `0002` re-points this FK to `ba_user.id`. Both the ORM model (`session.py`) and migration `0002` reflect the final state correctly.
+`chat_sessions.user_id` references `ba_user.id` in the current schema and ORM model.
 
 ### ℹ️ camelCase DB columns in `ba_*` tables
 

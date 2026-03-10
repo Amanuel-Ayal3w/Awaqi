@@ -342,7 +342,7 @@ Same pattern using `cu_session` + `cu_user` tables and the `get_current_customer
 ### Access Control
 - **Guest Users**: Anonymous UUID-based sessions (chat only, no login)
 - **Customers**: Better Auth email/password login via `cu_*` tables
-- **Admins**: Better Auth email/password login via `ba_*` tables with role-based access (`superadmin` / `editor`)
+- **Admins**: Better Auth email/password login via `ba_*` tables with role-based access (`superadmin` / `editor`); destructive admin actions require `superadmin`
 
 ### Rate Limiting
 - 15 requests per 10 minutes per IP, enforced via Redis `INCR` + `EXPIRE` on `rate:{ip}` keys
@@ -352,7 +352,7 @@ Same pattern using `cu_session` + `cu_user` tables and the `get_current_customer
 - Redis-backed with automatic expiry
 
 ### Data Privacy
-- Guest session data stored in volatile Redis (10-minute TTL)
+- Guest chat messages are persisted in PostgreSQL; access to guest session history/reuse is protected by a server-signed session token
 - No PII collection from public users
 
 ## Future Enhancements

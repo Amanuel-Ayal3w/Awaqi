@@ -2,8 +2,8 @@
 Async Redis client for session storage and rate-limiting.
 
 Two use cases:
-  1. Guest chat sessions (10-minute TTL) — keyed by session UUID
-  2. Rate-limit counters per IP — keyed by "rate:{ip}"
+  1. IP rate-limit counters — keyed by "rate:{ip}"
+  2. Scraper coordination keys — keyed by "scraper:*"
 
 Environment variables:
     REDIS_URL  — Redis connection URL (default: redis://localhost:6379/0)
@@ -44,17 +44,8 @@ redis_client: aioredis.Redis = aioredis.Redis(connection_pool=_pool)
 # ---------------------------------------------------------------------------
 # TTL constants
 # ---------------------------------------------------------------------------
-GUEST_SESSION_TTL: int = 60 * 10   # 10 minutes
 RATE_LIMIT_WINDOW: int = 60 * 10   # 10-minute rolling window
 RATE_LIMIT_MAX: int = 15           # max requests per window per IP
-
-
-# ---------------------------------------------------------------------------
-# Key helpers
-# ---------------------------------------------------------------------------
-def session_key(session_id: str) -> str:
-    """Redis key for a guest session's conversation history."""
-    return f"session:{session_id}"
 
 
 def rate_limit_key(ip: str) -> str:
