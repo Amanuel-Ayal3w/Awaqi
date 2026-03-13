@@ -51,21 +51,6 @@ export interface LogEntryList {
     logs: LogEntry[];
 }
 
-export interface ScraperStatus {
-    job_id: string;
-    status: string;
-}
-
-export interface ScraperJobStatus {
-    job_id: string;
-    status: string;
-    documents_found: number;
-    documents_new: number;
-    started_at?: string | null;
-    finished_at?: string | null;
-    error?: string | null;
-}
-
 export interface AdminDocumentItem {
     id: string;
     title: string;

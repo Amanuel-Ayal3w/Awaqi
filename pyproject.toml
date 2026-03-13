@@ -8,7 +8,6 @@ dependencies = []
 [tool.uv.workspace]
 members = [
     "apps/api",
-    "apps/scraper",
     "apps/telegram-bot",
     "packages/ai-engine",
     "packages/database",

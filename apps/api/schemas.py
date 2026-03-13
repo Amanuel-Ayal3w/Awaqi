@@ -51,20 +51,6 @@ class LogEntry(BaseModel):
 class LogEntryList(BaseModel):
     logs: List[LogEntry]
 
-class ScraperStatus(BaseModel):
-    job_id: str
-    status: str
-
-
-class ScraperJobStatus(BaseModel):
-    job_id: str
-    status: str
-    documents_found: int = 0
-    documents_new: int = 0
-    started_at: Optional[str] = None
-    finished_at: Optional[str] = None
-    error: Optional[str] = None
-
 
 class AdminDocumentItem(BaseModel):
     id: str

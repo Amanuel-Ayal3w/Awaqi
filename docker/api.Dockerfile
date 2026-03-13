@@ -12,7 +12,6 @@ COPY packages/database/pyproject.toml packages/database/pyproject.toml
 COPY packages/nlu/pyproject.toml packages/nlu/pyproject.toml
 COPY packages/ai-engine/pyproject.toml packages/ai-engine/pyproject.toml
 COPY apps/api/pyproject.toml apps/api/pyproject.toml
-COPY apps/scraper/pyproject.toml apps/scraper/pyproject.toml
 COPY apps/telegram-bot/pyproject.toml apps/telegram-bot/pyproject.toml
 
 # Install dependencies (cached unless pyproject.toml changes)

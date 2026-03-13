@@ -1,5 +1,5 @@
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import { FileText, Database, Users, Activity } from "lucide-react"
+import { FileText, Database, Users, CheckCircle } from "lucide-react"
 import { OverviewChart } from "@/components/admin/OverviewChart"
 
 export default function AdminDashboard() {
@@ -39,13 +39,13 @@ export default function AdminDashboard() {
                 </Card>
                 <Card>
                     <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                        <CardTitle className="text-sm font-medium">Scraper Status</CardTitle>
-                        <Activity className="h-4 w-4 text-muted-foreground" />
+                        <CardTitle className="text-sm font-medium">System Status</CardTitle>
+                        <CheckCircle className="h-4 w-4 text-muted-foreground" />
                     </CardHeader>
                     <CardContent>
-                        <div className="text-2xl font-bold text-green-500">Idle</div>
+                        <div className="text-2xl font-bold text-green-500">Healthy</div>
                         <p className="text-xs text-muted-foreground">
-                            Last run: 2 hours ago
+                            All services running
                         </p>
                     </CardContent>
                 </Card>
@@ -84,13 +84,6 @@ export default function AdminDashboard() {
                     <CardContent>
                         {/* List will go here */}
                         <div className="space-y-4">
-                            <div className="flex items-center gap-4">
-                                <div className="h-2 w-2 rounded-full bg-green-500" />
-                                <div className="space-y-1">
-                                    <p className="text-sm font-medium leading-none">Scraper finished successfully</p>
-                                    <p className="text-xs text-muted-foreground">2 hours ago</p>
-                                </div>
-                            </div>
                             <div className="flex items-center gap-4">
                                 <div className="h-2 w-2 rounded-full bg-blue-500" />
                                 <div className="space-y-1">

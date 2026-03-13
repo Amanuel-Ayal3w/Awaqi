@@ -33,8 +33,7 @@ Awaqi is an AI-powered Support Bot for the Ethiopian Revenue Authority, designed
 ├── apps/                      # Standalone applications
 │   ├── api/                   # FastAPI backend gateway
 │   ├── web/                   # Next.js frontend
-│   ├── telegram-bot/          # Telegram service
-│   └── scraper/               # MoR website scraper
+│   └── telegram-bot/          # Telegram service
 ├── packages/                  # Shared internal libraries
 │   ├── ai-engine/             # RAG, LLM, embeddings
 │   ├── database/              # PostgreSQL models & schemas
@@ -63,7 +62,6 @@ Awaqi is an AI-powered Support Bot for the Ethiopian Revenue Authority, designed
 - `DELETE /v1/admin/users/{user_id}`: Delete an admin user (auth required)
 - `POST /v1/admin/upload`: Upload regulatory documents (auth required)
 - `GET /v1/admin/logs`: View system logs (auth required)
-- `POST /v1/admin/scrape`: Trigger scraper job (auth required)
 
 **Dependencies**:
 - `fastapi`, `pydantic`, `uvicorn`
@@ -77,7 +75,7 @@ Awaqi is an AI-powered Support Bot for the Ethiopian Revenue Authority, designed
 - `/[locale]/chat`: Main chat interface (with `?session=<uuid>` for specific sessions)
 - `/[locale]/chat/login`: Customer login
 - `/[locale]/admin/login`: Admin login
-- `/[locale]/admin/*`: Admin dashboard (knowledge base, logs, scraper, settings)
+- `/[locale]/admin/*`: Admin dashboard (knowledge base, logs, settings)
 - `/[locale]/chat/settings`: User settings (planned)
 
 **Features**:
@@ -108,16 +106,7 @@ Sessions are tracked both client-side (for fast sidebar rendering) and server-si
 2. `ChatInterface` picks up the UUID, calls `GET /v1/chat/history/<uuid>` to load messages from the API
 3. Sidebar highlights the active session via `searchParams.get('session')`
 
-#### 3. `apps/scraper` - Automated Knowledge Ingestor
-**Purpose**: Scrape regulatory documents from mor.gov.et.
-
-**Planned Features**:
-- Daily cron job (00:00 EAT)
-- PDF download and processing
-- Document change detection
-- Integration with `database` package
-
-#### 4. `apps/telegram-bot` - Telegram Service
+#### 3. `apps/telegram-bot` - Telegram Service
 **Purpose**: Telegram interface for the chatbot (@ERATaxBot).
 
 **Planned Features**:
@@ -260,36 +249,26 @@ sequenceDiagram
 
 ```mermaid
 sequenceDiagram
-    participant Scraper as apps/scraper
-    participant MoR as mor.gov.et
+    participant Admin as Admin User
     participant API as FastAPI Gateway
     participant Processor as AI Engine (Processor)
     participant DB as Database
     
-    Note over Scraper: Daily cron (00:00 EAT)
-    Scraper->>MoR: Check for new documents
-    MoR-->>Scraper: List of PDFs
-    Scraper->>Scraper: Compare with known hashes
-    loop For each new document
-        Scraper->>MoR: Download PDF
-        MoR-->>Scraper: PDF file
-        Scraper->>API: POST /v1/admin/upload (Document payload)
-        API->>Processor: Forward for processing
-        Processor->>Processor: OCR + text extraction
-        Processor->>Processor: Chunk and generate embeddings
-        Processor->>DB: Store document, chunks, and vectors
-        DB-->>Processor: Confirmation
-        Processor-->>API: Status Success
-        API-->>Scraper: 200 OK
-    end
+    Admin->>API: POST /v1/admin/upload (PDF file)
+    API->>Processor: Forward for processing
+    Processor->>Processor: OCR + text extraction
+    Processor->>Processor: Chunk and generate embeddings
+    Processor->>DB: Store document, chunks, and vectors
+    DB-->>Processor: Confirmation
+    Processor-->>API: Status Success
+    API-->>Admin: 200 OK
 ```
 
 **Steps**:
-1. Scraper checks and downloads new PDFs from mor.gov.et
-2. Scraper forwards the raw document to the API via the ingestion pipeline (`POST /v1/admin/upload` or internal webhook)
-3. The API passes the document to the AI Engine / Processor
-4. The document is processed (OCR, text extraction, chunking, and embedding generation)
-5. The API/Processor safely handles writing to PostgreSQL (pgvector), ensuring a single entry point to the database
+1. Admin uploads a PDF via `POST /v1/admin/upload`
+2. The API passes the document to the AI Engine / Processor
+3. The document is processed (OCR, text extraction, chunking, and embedding generation)
+4. The API/Processor safely handles writing to PostgreSQL (pgvector), ensuring a single entry point to the database
 
 ## Development Workflow
 
@@ -357,7 +336,6 @@ Same pattern using `cu_session` + `cu_user` tables and the `get_current_customer
 
 ## Future Enhancements
 1. Implement actual RAG logic in `ai-engine` (currently returns placeholder responses)
-2. Implement scraper automation (cron scheduling, PDF processing pipeline)
 3. Add multi-turn conversation context (pass prior messages to LLM)
 4. Implement confidence-based fallback ("Contact ERA officer")
 5. Add Telegram bot deployment

@@ -10,7 +10,6 @@ This repository hosts the **Ethio-Revenue-Bot**, an AI-powered tax support assis
 │   ├── api/                     # Web Backend Gateway (FastAPI)
 │   ├── web/                     # Next.js Frontend (shadcn/ui Monochrome)
 │   ├── telegram-bot/            # Telegram Service (@ERATaxBot)
-│   └── scraper/                 # Automated Knowledge Ingestor (mor.gov.et)
 │
 ├── packages/                    # Shared Internal Libraries (The "Brains")
 │   ├── ai-engine/               # Core RAG, Hybrid Search & Confidence Logic
@@ -22,7 +21,6 @@ This repository hosts the **Ethio-Revenue-Bot**, an AI-powered tax support assis
 │   ├── api.Dockerfile           # For the Web Backend
 │   ├── web.Dockerfile           # For the Next.js Frontend
 │   ├── bot.Dockerfile           # For the Telegram Service
-│   ├── scraper.Dockerfile       # For the Ingestion Background Worker
 │   └── docker-compose.yml       # Orchestrates all services + DB + Redis
 │
 ├── .github/                     # Change Management & CI/CD
@@ -41,7 +39,7 @@ This repository hosts the **Ethio-Revenue-Bot**, an AI-powered tax support assis
 
 ### Running with Docker (Recommended)
 
-To spin up the entire system (Database, API, Frontend, Bot, Scraper):
+To spin up the entire system (Database, API, Frontend, Bot):
 
 ```bash
 export BETTER_AUTH_SECRET="$(openssl rand -base64 32)"

@@ -10,8 +10,6 @@ import type {
     DocumentStatus,
     FeedbackRequest,
     LogEntryList,
-    ScraperJobStatus,
-    ScraperStatus,
 } from "@/types/api";
 
 const apiClient = axios.create({
@@ -95,17 +93,7 @@ export const adminApi = {
         return data;
     },
 
-    triggerScraper: async (): Promise<ScraperStatus> => {
-        const { data } = await apiClient.post<ScraperStatus>("/v1/admin/scrape");
-        return data;
-    },
 
-    getScraperStatus: async (jobId: string): Promise<ScraperJobStatus> => {
-        const { data } = await apiClient.get<ScraperJobStatus>(
-            `/v1/admin/scrape/status?job_id=${encodeURIComponent(jobId)}`
-        );
-        return data;
-    },
 
     listDocuments: async (limit = 100): Promise<AdminDocumentList> => {
         const { data } = await apiClient.get<AdminDocumentList>(

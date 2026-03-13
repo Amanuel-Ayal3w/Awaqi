@@ -1,5 +1,4 @@
 import hashlib
-import json
 import os
 import uuid
 from datetime import datetime, timezone
@@ -9,7 +8,6 @@ from database.models.auth import BaUser
 from database.models.document import Document
 from database.models.document import DocumentStatus as DocStatusEnum
 from database.models.session import Message, MessageRole
-from database.redis_client import redis_client
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -23,13 +21,8 @@ from apps.api.schemas import (
     DocumentStatus,
     LogEntry,
     LogEntryList,
-    ScraperJobStatus,
-    ScraperStatus,
 )
 
-REDIS_TRIGGER_KEY = "scraper:trigger"
-REDIS_LOCK_KEY = "scraper:running"
-REDIS_JOB_PREFIX = "scraper:job:"
 MAX_UPLOAD_BYTES = int(os.getenv("MAX_UPLOAD_BYTES", str(10 * 1024 * 1024)))
 UPLOAD_READ_CHUNK_SIZE = 1024 * 1024
 ALLOWED_UPLOAD_MIME_TYPES = {"application/pdf", "application/x-pdf"}
@@ -237,35 +230,3 @@ async def get_logs(
 
     return LogEntryList(logs=logs)
 
-
-@router.post("/admin/scrape", response_model=ScraperStatus)
-async def trigger_scrape(
-    current_user: BaUser = Depends(get_current_admin),
-):
-    _require_superadmin(current_user)
-
-    is_running = await redis_client.get(REDIS_LOCK_KEY)
-    if is_running:
-        return ScraperStatus(job_id="", status="already_running")
-
-    job_id = str(uuid.uuid4())
-    await redis_client.set(
-        REDIS_TRIGGER_KEY,
-        json.dumps({"job_id": job_id, "requested_at": datetime.now(timezone.utc).isoformat()}),
-    )
-    return ScraperStatus(job_id=job_id, status="queued")
-
-
-@router.get("/admin/scrape/status", response_model=ScraperJobStatus)
-async def get_scrape_status(
-    job_id: str,
-    current_user: BaUser = Depends(get_current_admin),
-):
-    raw = await redis_client.get(f"{REDIS_JOB_PREFIX}{job_id}")
-    if not raw:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Job not found or expired",
-        )
-    data = json.loads(raw)
-    return ScraperJobStatus(**data)
