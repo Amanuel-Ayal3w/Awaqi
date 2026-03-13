@@ -23,10 +23,13 @@ if config.config_file_name is not None:
     fileConfig(config.config_file_name)  # type: ignore[arg-type]
 
 # ── Pull DATABASE_URL from env (overrides alembic.ini placeholder) ───────────
-database_url: str = os.getenv(
-    "DATABASE_URL",
-    "postgresql+asyncpg://user:password@localhost:5432/awaqi_db",
-)
+database_url: str | None = os.getenv("DATABASE_URL")
+
+if not database_url:
+    raise RuntimeError(
+        "DATABASE_URL environment variable is not set. "
+        "Copy .env.example to .env and fill in your database credentials."
+    )
 
 # Normalise to asyncpg driver (mirrors db.py logic)
 if database_url.startswith("postgresql://"):

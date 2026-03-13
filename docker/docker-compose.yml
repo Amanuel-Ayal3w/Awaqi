@@ -3,13 +3,13 @@ services:
   db:
     image: pgvector/pgvector:pg16
     environment:
-      POSTGRES_USER: user
-      POSTGRES_PASSWORD: password
-      POSTGRES_DB: awaqi_db
+      POSTGRES_USER: ${POSTGRES_USER:-user}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-password}
+      POSTGRES_DB: ${POSTGRES_DB:-awaqi_db}
     ports:
       - "5432:5432"
     healthcheck:
-      test: [ "CMD-SHELL", "pg_isready -U user -d awaqi_db" ]
+      test: [ "CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-user} -d ${POSTGRES_DB:-awaqi_db}" ]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -30,10 +30,11 @@ services:
       dockerfile: docker/api.Dockerfile
     ports:
       - "8000:8000"
+    env_file:
+      - .env
     environment:
-      DATABASE_URL: postgresql+asyncpg://user:password@db:5432/awaqi_db
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-user}:${POSTGRES_PASSWORD:-password}@db:5432/${POSTGRES_DB:-awaqi_db}
       REDIS_URL: redis://redis:6379/0
-      ALLOWED_ORIGINS: http://localhost:3000
     depends_on:
       db:
         condition: service_healthy
@@ -46,11 +47,10 @@ services:
       dockerfile: docker/web.Dockerfile
     ports:
       - "3000:3000"
+    env_file:
+      - .env
     environment:
-      DATABASE_URL_SYNC: postgresql://user:password@db:5432/awaqi_db
-      BETTER_AUTH_SECRET: ${BETTER_AUTH_SECRET:-change-me-in-production}
-      NEXT_PUBLIC_APP_URL: http://localhost:3000
-      NEXT_PUBLIC_API_URL: http://localhost:8000
+      DATABASE_URL_SYNC: postgresql://${POSTGRES_USER:-user}:${POSTGRES_PASSWORD:-password}@db:5432/${POSTGRES_DB:-awaqi_db}
     depends_on:
       - api
 
@@ -58,8 +58,10 @@ services:
     build:
       context: .
       dockerfile: docker/bot.Dockerfile
+    env_file:
+      - .env
     environment:
-      DATABASE_URL: postgresql+asyncpg://user:password@db:5432/awaqi_db
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-user}:${POSTGRES_PASSWORD:-password}@db:5432/${POSTGRES_DB:-awaqi_db}
       REDIS_URL: redis://redis:6379/0
     depends_on:
       - api

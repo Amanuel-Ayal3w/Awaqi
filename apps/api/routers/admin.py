@@ -1,8 +1,10 @@
 import hashlib
+import logging
 import os
 import uuid
 from datetime import datetime, timezone
 
+from ai_engine import ingest_pdf
 from database import get_session
 from database.models.auth import BaUser
 from database.models.document import Document
@@ -22,6 +24,8 @@ from apps.api.schemas import (
     LogEntry,
     LogEntryList,
 )
+
+logger = logging.getLogger(__name__)
 
 MAX_UPLOAD_BYTES = int(os.getenv("MAX_UPLOAD_BYTES", str(10 * 1024 * 1024)))
 UPLOAD_READ_CHUNK_SIZE = 1024 * 1024
@@ -180,15 +184,31 @@ async def upload_document(
     )
     doc = existing.scalar_one_or_none()
 
-    if doc is None:
-        doc = Document(
-            id=uuid.uuid4(),
-            title=file.filename or "Untitled",
-            file_hash=file_hash,
-            status=DocStatusEnum.PENDING,
+    if doc is not None:
+        return DocumentStatus(
+            doc_id=str(doc.id),
+            status=str(getattr(doc.status, "value", doc.status)),
         )
-        db.add(doc)
-        await db.flush()
+
+    # Create new document record
+    doc = Document(
+        id=uuid.uuid4(),
+        title=file.filename or "Untitled",
+        file_hash=file_hash,
+        status=DocStatusEnum.PENDING,
+    )
+    db.add(doc)
+    await db.flush()
+
+    # Run the ingestion pipeline: extract → chunk → embed → store
+    try:
+        pdf_bytes = await file.read()
+        chunk_count = await ingest_pdf(pdf_bytes, doc.id, db)
+        doc.status = DocStatusEnum.INDEXED
+        logger.info("Document %s indexed with %d chunks", doc.id, chunk_count)
+    except Exception:
+        doc.status = DocStatusEnum.FAILED
+        logger.exception("Ingestion failed for document %s", doc.id)
 
     return DocumentStatus(
         doc_id=str(doc.id),

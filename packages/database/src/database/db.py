@@ -26,10 +26,13 @@ from sqlalchemy.ext.asyncio import (
 
 load_dotenv()
 
-_DATABASE_URL: str = os.getenv(
-    "DATABASE_URL",
-    "postgresql+asyncpg://user:password@localhost:5432/awaqi_db",
-)
+_DATABASE_URL: str | None = os.getenv("DATABASE_URL")
+
+if not _DATABASE_URL:
+    raise RuntimeError(
+        "DATABASE_URL environment variable is not set. "
+        "Copy .env.example to .env and fill in your database credentials."
+    )
 
 # Normalise the URL to always use the asyncpg async driver.
 # Handles cases where DATABASE_URL is set as plain "postgresql://" or

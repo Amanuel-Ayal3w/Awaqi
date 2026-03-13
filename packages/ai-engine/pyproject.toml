@@ -4,15 +4,13 @@ version = "0.1.0"
 description = "Core AI logic for Awaqi"
 requires-python = ">=3.11"
 dependencies = [
-    "langchain",
-    "openai",
-    "chromadb",
-    "nlu",
+    "google-genai",
+    "pypdf",
+    "numpy",
     "database",
     "utils"
 ]
 
 [tool.uv.sources]
-nlu = { workspace = true }
 database = { workspace = true }
 utils = { workspace = true }
