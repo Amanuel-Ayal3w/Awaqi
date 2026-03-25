@@ -73,16 +73,15 @@ class Document(Base):
         return f"<Document id={self.id} title={self.title!r} status={self.status}>"
 
 
-# pgvector dimension matches multilingual-e5-large output
 EMBEDDING_DIM = 1024
 
 
 class DocumentChunk(Base):
     """
-    A fixed-size text chunk of a Document along with its dense embedding.
+    A text chunk of a Document along with its dense embedding.
 
-    Chunking strategy: 1024 tokens, 100-token overlap.
-    Embedding model: multilingual-e5-large → 1024-dimensional vectors.
+    Chunking: ~4000-char sliding window with 400-char overlap.
+    Embedding: Gemini Embedding API (gemini-embedding-001), 1024 dimensions.
     """
 
     __tablename__ = "document_chunks"
@@ -98,7 +97,6 @@ class DocumentChunk(Base):
     )
     chunk_index: Mapped[int] = mapped_column(Integer, nullable=False)
     content: Mapped[str] = mapped_column(Text, nullable=False)
-    # 1024-dimensional dense vector from multilingual-e5-large
     embedding: Mapped[list[float]] = mapped_column(Vector(EMBEDDING_DIM), nullable=True)
     # Extra metadata: page_number, section_title, etc.
     chunk_metadata: Mapped[dict] = mapped_column(JSONB, nullable=True, default=dict)

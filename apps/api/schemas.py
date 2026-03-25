@@ -29,15 +29,6 @@ class FeedbackRequest(BaseModel):
     score: int
     comment: Optional[str] = None
 
-# Auth Models
-class LoginRequest(BaseModel):
-    username: str
-    password: str
-
-class Token(BaseModel):
-    access_token: str
-    token_type: str
-
 # Admin Models
 class DocumentStatus(BaseModel):
     doc_id: str

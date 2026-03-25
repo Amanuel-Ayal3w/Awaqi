@@ -14,10 +14,8 @@ from ai_engine.extractor import PageText
 
 logger = logging.getLogger(__name__)
 
-# Target ~1000 tokens ≈ 4000 characters
-DEFAULT_CHUNK_SIZE = 4000
-# Overlap ~100 tokens ≈ 400 characters
-DEFAULT_OVERLAP = 400
+DEFAULT_CHUNK_SIZE = 4000  # characters (~1000 tokens)
+DEFAULT_OVERLAP = 400      # characters (~100 tokens)
 
 
 @dataclass

@@ -1,4 +1,4 @@
-.PHONY: help check build-web test test-unit test-integration lint-py
+.PHONY: help check build-web test test-unit test-integration lint-py dev
 
 # --- Colors ---
 GREEN  := \033[0;32m
@@ -17,9 +17,25 @@ help:
 	@echo "  $(CYAN)make test-unit$(RESET)          Run only unit tests (no DB needed)"
 	@echo "  $(CYAN)make test-integration$(RESET)   Run only integration tests (needs PostgreSQL)"
 	@echo "  $(CYAN)make lint-py$(RESET)            Ruff lint check"
+	@echo "  $(CYAN)make dev$(RESET)                Start backend + frontend (local dev)"
 	@echo "  $(CYAN)make build-web$(RESET)          Lint, type-check, and build Next.js"
 	@echo "$(LINE)"
 	@echo ""
+
+# --- Local dev (backend + frontend) -----------------------------------------
+dev:
+	@echo ""
+	@echo "$(LINE)"
+	@echo "$(BOLD)  STARTING DEV SERVERS$(RESET)"
+	@echo "$(LINE)"
+	@echo "  $(CYAN)Backend$(RESET)   http://localhost:8000"
+	@echo "  $(CYAN)Frontend$(RESET)  http://localhost:3000"
+	@echo "$(LINE)"
+	@set -a && [ -f .env ] && . ./.env; set +a; \
+		trap 'kill 0' INT TERM; \
+		uv run uvicorn apps.api.main:app --reload --host 0.0.0.0 --port 8000 & \
+		cd apps/web && npm run dev & \
+		wait
 
 # --- Run everything ---------------------------------------------------------
 check: lint-py test build-web

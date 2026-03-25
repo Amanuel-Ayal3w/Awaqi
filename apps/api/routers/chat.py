@@ -27,7 +27,12 @@ from apps.api.schemas import (
 )
 
 router = APIRouter()
-SESSION_TOKEN_SECRET = os.getenv("SESSION_TOKEN_SECRET", "dev-session-token-secret-change-me")
+SESSION_TOKEN_SECRET = os.environ.get("SESSION_TOKEN_SECRET", "")
+if not SESSION_TOKEN_SECRET:
+    raise RuntimeError(
+        "SESSION_TOKEN_SECRET env var is not set. "
+        "Add it to your .env file or export it before starting the server."
+    )
 
 
 def _build_guest_session_token(session_id: uuid.UUID) -> str:
@@ -72,15 +77,13 @@ async def _get_or_create_session(
             _validate_guest_session_token(chat_session, session_token)
         return chat_session
 
-    if chat_session is None:
-        chat_session = ChatSession(
-            id=sid,
-            channel=Channel.WEB,
-            language=language,
-        )
-        db.add(chat_session)
-        await db.flush()
-
+    chat_session = ChatSession(
+        id=sid,
+        channel=Channel.WEB,
+        language=language,
+    )
+    db.add(chat_session)
+    await db.flush()
     return chat_session
 
 
@@ -182,7 +185,9 @@ async def get_history(
 async def submit_feedback(
     message_id: str,
     request: FeedbackRequest,
+    session_token: str | None = Header(None, alias="X-Session-Token"),
     db: AsyncSession = Depends(get_session),
+    _rl: None = Depends(require_rate_limit),
 ):
     try:
         mid = uuid.UUID(message_id)
@@ -192,8 +197,9 @@ async def submit_feedback(
             detail="message_id must be a valid UUID",
         )
 
-    # Verify the message exists
-    result = await db.execute(select(Message).where(Message.id == mid))
+    result = await db.execute(
+        select(Message).where(Message.id == mid)
+    )
     message = result.scalar_one_or_none()
     if message is None:
         raise HTTPException(
@@ -201,7 +207,13 @@ async def submit_feedback(
             detail="Message not found",
         )
 
-    # Upsert feedback (unique per message)
+    session_result = await db.execute(
+        select(ChatSession).where(ChatSession.id == message.session_id)
+    )
+    chat_session = session_result.scalar_one_or_none()
+    if chat_session is not None and chat_session.user_id is None:
+        _validate_guest_session_token(chat_session, session_token)
+
     existing = await db.execute(
         select(Feedback).where(Feedback.message_id == mid)
     )

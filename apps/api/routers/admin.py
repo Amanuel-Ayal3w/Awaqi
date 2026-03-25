@@ -221,30 +221,36 @@ async def get_logs(
     current_user: BaUser = Depends(get_current_admin),
     db: AsyncSession = Depends(get_session),
 ):
+    """Return recent chat activity for admin monitoring."""
+    from database.models.session import ChatSession
+
     result = await db.execute(
-        select(Message)
-        .where(Message.role == MessageRole.USER)
+        select(Message, ChatSession)
+        .join(ChatSession, Message.session_id == ChatSession.id)
         .order_by(Message.created_at.desc())
         .limit(100)
     )
-    messages = result.scalars().all()
+    rows = result.all()
 
     logs = [
         LogEntry(
             timestamp=msg.created_at.isoformat(),
-            level="INFO",
-            message=f"[{msg.role}] {msg.content[:120]}",
+            level="INFO" if msg.role == MessageRole.USER else "DEBUG",
+            message=(
+                f"[session:{str(session.id)[:8]}] "
+                f"[{msg.role.value}] "
+                f"{msg.content[:120]}"
+            ),
         )
-        for msg in messages
+        for msg, session in rows
     ]
 
-    # Prepend a system startup entry so the page is never empty
     if not logs:
         logs = [
             LogEntry(
                 timestamp=datetime.now(timezone.utc).isoformat(),
                 level="INFO",
-                message="No messages recorded yet.",
+                message="No chat activity recorded yet.",
             )
         ]
 

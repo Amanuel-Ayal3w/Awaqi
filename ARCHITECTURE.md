@@ -15,16 +15,15 @@ Awaqi is an AI-powered Support Bot for the Ethiopian Revenue Authority, designed
 ### Backend
 - **API Framework**: FastAPI (Python 3.12+)
 - **Package Manager**: uv (Universal Python Project Manager)
-- **LLM**: Gemini 2.5 Flash
-- **Embeddings**: multilingual-e5-large (planned integration in `ai-engine`)
-- **Vector Database**: PostgreSQL + pgvector (models implemented)
-- **NLU**: XLM-RoBERTa, fastText (planned scaffolding in `nlu`)
+- **LLM**: Gemini 2.0 Flash (text extraction via `ai-engine/extractor.py`)
+- **Embeddings**: Gemini Embedding API (`gemini-embedding-001`, 1024-dim, via `ai-engine/embedder.py`)
+- **Vector Database**: PostgreSQL + pgvector (models implemented, IVFFlat index)
 
 ### Infrastructure
 - **Containerization**: Docker & Docker Compose
 - **Database**: PostgreSQL 16 + pgvector (via `packages/database`, Alembic migrations)
 - **Session Storage**: Redis (configured in `packages/database/redis_client.py`)
-- **Rate Limiting**: Redis-based (15 req / 10 min per IP, via `apps/api/deps_rate_limit.py`)
+- **Rate Limiting**: Redis-based (15 req / 10 min per IP, via `apps/api/deps_rate_limit.py`, implemented)
 
 ## Monorepo Structure
 
@@ -35,9 +34,8 @@ Awaqi is an AI-powered Support Bot for the Ethiopian Revenue Authority, designed
 │   ├── web/                   # Next.js frontend
 │   └── telegram-bot/          # Telegram service
 ├── packages/                  # Shared internal libraries
-│   ├── ai-engine/             # RAG, LLM, embeddings
+│   ├── ai-engine/             # PDF extraction, embedding, ingestion pipeline
 │   ├── database/              # PostgreSQL models & schemas
-│   ├── nlu/                   # Language detection, intent classification
 │   └── utils/                 # Shared utilities
 └── docker/                    # Docker configurations
 ```
@@ -51,7 +49,7 @@ Awaqi is an AI-powered Support Bot for the Ethiopian Revenue Authority, designed
 - RESTful endpoints for chat, auth, and admin operations
 - CORS configuration for frontend integration
 - Session management
-- Rate limiting (planned)
+- Rate limiting (Redis-backed, 15 req / 10 min per IP)
 
 **Current Endpoints**:
 - `GET /health`: Health check
@@ -65,7 +63,7 @@ Awaqi is an AI-powered Support Bot for the Ethiopian Revenue Authority, designed
 
 **Dependencies**:
 - `fastapi`, `pydantic`, `uvicorn`
-- Internal: `ai-engine`, `database`, `nlu`
+- Internal: `ai-engine`, `database`
 
 #### 2. `apps/web` - Next.js Frontend
 **Purpose**: User-facing web interface for the chatbot.
@@ -119,23 +117,22 @@ Sessions are tracked both client-side (for fast sidebar rendering) and server-si
 #### 1. `packages/ai-engine` - The "Brains"
 **Purpose**: Core RAG logic, LLM interaction, and embedding generation.
 
-**Planned Components**:
-- `EmbeddingEngine`: Text-to-vector conversion
-- `VectorStoreClient`: Interface to pgvector
-- `LLMClient`: Gemini API wrapper
-- `RAGController`: Hybrid retrieval + generation logic
+**Implemented**:
+- `extractor.py`: PDF text extraction via Gemini 2.0 Flash (per-page, handles OCR natively)
+- `chunker.py`: Sliding-window text chunking (~4000 chars with 400-char overlap, page metadata)
+- `embedder.py`: Embedding generation via Gemini Embedding API (`gemini-embedding-001`, 1024-dim)
+- `ingest.py`: Orchestrates extract -> chunk -> embed -> persist to PostgreSQL
 
-**Algorithms**:
-- BM25 (sparse retrieval)
-- Dense vector search (cosine similarity)
-- Reciprocal Rank Fusion (RRF)
-- Confidence scoring
+**Planned** (not yet implemented):
+- `RAGController`: Retrieval + generation for chat answers
+- Dense vector search (cosine similarity via pgvector)
+- BM25 sparse retrieval + Reciprocal Rank Fusion
 
 #### 2. `packages/database` - Data Layer
 **Purpose**: PostgreSQL schemas, vector operations, caching, and ORM.
 
 **Implemented Models**:
-- `Document` & `DocumentChunk`: Regulatory documents and 1024-token chunks with 1024-dim vector embeddings
+- `Document` & `DocumentChunk`: Regulatory documents and ~4000-char chunks with 1024-dim vector embeddings (Gemini Embedding API)
 - `BaUser` & `BaSession`: Admin auth tables managed by Better Auth (with custom `role` and `is_active` fields)
 - `CuUser` & `CuSession`: Customer auth tables managed by Better Auth
 - `ChatSession` & `Message`: Conversation history linking UUIDs and roles
@@ -148,15 +145,7 @@ Sessions are tracked both client-side (for fast sidebar rendering) and server-si
 - Redis client configuration for session handling and rate limiting
 - Alembic async migrations (`migrations/env.py` runs via `asyncpg`)
 
-#### 3. `packages/nlu` - Natural Language Understanding
-**Purpose**: Language detection and intent classification.
-
-**Planned Components**:
-- Language detection (fastText)
-- Intent classification (XLM-RoBERTa)
-- Entity extraction (Gemini-based)
-
-#### 4. `packages/utils` - Shared Utilities
+#### 3. `packages/utils` - Shared Utilities
 **Purpose**: Common helper functions and constants.
 
 ## System Architecture Diagram
@@ -174,13 +163,12 @@ graph TB
     end
     
     subgraph Packages["Internal Packages"]
-        NLU["packages/nlu<br/>Language Detection<br/>Intent Classification"]
-        AIEngine["packages/ai-engine<br/>RAG Controller<br/>Embeddings<br/>LLM Client"]
+        AIEngine["packages/ai-engine<br/>Ingestion Pipeline<br/>Embeddings<br/>PDF Extraction"]
         DB["packages/database<br/>PostgreSQL Models<br/>Vector Operations"]
     end
     
     subgraph External["External Services"]
-        Gemini["Gemini 2.5 Flash<br/>(LLM)"]
+        Gemini["Gemini 2.0 Flash<br/>(Extraction & Embedding)"]
         Postgres["PostgreSQL<br/>+ pgvector"]
         Redis["Redis<br/>(Sessions & Rate Limiting)"]
     end
@@ -189,11 +177,9 @@ graph TB
     Telegram --> Gateway
     Admin --> Gateway
     
-    Gateway --> NLU
     Gateway --> AIEngine
     Gateway --> DB
     
-    NLU -.-> AIEngine
     AIEngine --> Gemini
     AIEngine --> DB
     DB --> Postgres
@@ -213,22 +199,16 @@ sequenceDiagram
     actor User
     participant Frontend
     participant API as FastAPI Gateway
-    participant NLU
     participant RAG as AI Engine (RAG)
     participant DB as Database
-    participant LLM as Gemini 2.5
+    participant LLM as Gemini 2.0 Flash
     
     User->>Frontend: Submit query
     Frontend->>API: POST /v1/chat/send
     API->>API: Validate with Pydantic
-    API->>NLU: Detect language & intent
-    NLU-->>API: Language: am/en, Intent
     API->>RAG: Process query
-    RAG->>DB: BM25 search (keywords)
-    DB-->>RAG: Keyword matches
-    RAG->>DB: Dense vector search
+    RAG->>DB: Dense vector search (pgvector)
     DB-->>RAG: Top-K chunks
-    RAG->>RAG: Reciprocal Rank Fusion
     RAG->>LLM: Generate response with context
     LLM-->>RAG: Response + citations
     RAG->>RAG: Calculate confidence score
@@ -238,12 +218,13 @@ sequenceDiagram
 ```
 
 **Steps**:
-1. User submits query via web/Telegram → `POST /v1/chat/send`
+1. User submits query via web/Telegram -> `POST /v1/chat/send`
 2. API validates request using Pydantic models
-3. NLU detects language and classifies intent
-4. AI Engine retrieves relevant document chunks (BM25 + dense search)
-5. LLM generates response with citations
-6. Response returned to frontend with confidence score
+3. AI Engine retrieves relevant document chunks (dense vector search via pgvector)
+4. LLM generates response with citations
+5. Response returned to frontend with confidence score
+
+> **Note**: The RAG retrieval + generation path is not yet wired up. Chat currently returns a placeholder response.
 
 ### 2. Document Ingestion Flow
 

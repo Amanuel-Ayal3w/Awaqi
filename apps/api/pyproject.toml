@@ -11,10 +11,8 @@ dependencies = [
     "uvicorn>=0.29.0",
     "ai-engine",
     "database",
-    "nlu"
 ]
 
 [tool.uv.sources]
 ai-engine = { workspace = true }
 database = { workspace = true }
-nlu = { workspace = true }

@@ -15,10 +15,9 @@ import pytest
 from dotenv import load_dotenv
 
 load_dotenv()
-os.environ.setdefault(
-    "DATABASE_URL",
-    "postgresql+asyncpg://user:password@localhost:5432/awaqi_db",
-)
+
+TEST_DATABASE_URL = "postgresql+asyncpg://postgres:postgres@localhost:5432/awaqi_db_test"
+os.environ["DATABASE_URL"] = TEST_DATABASE_URL
 os.environ.setdefault("REDIS_URL", "redis://localhost:6379/0")
 os.environ.setdefault("SESSION_TOKEN_SECRET", "test-secret")
 

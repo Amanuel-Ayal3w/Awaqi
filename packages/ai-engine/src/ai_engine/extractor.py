@@ -1,7 +1,7 @@
 """
-PDF text extraction using Gemini Flash.
+PDF text extraction using Gemini 2.0 Flash.
 
-Sends PDF pages to gemini-2.5-flash to extract text, handling both
+Sends PDF pages to gemini-2.0-flash to extract text, handling both
 digitally-born PDFs and scanned/OCR documents natively.
 """
 
