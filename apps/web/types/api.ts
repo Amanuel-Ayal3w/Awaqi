@@ -21,6 +21,7 @@ export interface ChatResponse {
     response_text: string;
     citations: Citation[];
     confidence_score: number;
+    session_token?: string;
 }
 
 export interface ChatMessage {

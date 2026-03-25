@@ -1,5 +1,6 @@
 const SESSIONS_KEY = 'awaqi_sessions';
 const ACTIVE_SESSION_KEY = 'awaqi_active_session';
+const SESSION_TOKEN_PREFIX = 'awaqi_session_token_';
 
 export interface ChatSessionInfo {
     id: string;
@@ -56,4 +57,14 @@ export function getOrCreateSessionId(): string {
         id = createNewSession();
     }
     return id;
+}
+
+export function setSessionToken(sessionId: string, token: string) {
+    if (typeof window === 'undefined') return;
+    sessionStorage.setItem(SESSION_TOKEN_PREFIX + sessionId, token);
+}
+
+export function getSessionToken(sessionId: string): string | null {
+    if (typeof window === 'undefined') return null;
+    return sessionStorage.getItem(SESSION_TOKEN_PREFIX + sessionId);
 }

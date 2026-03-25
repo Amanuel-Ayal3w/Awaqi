@@ -10,13 +10,14 @@ tables (completely separate from the admin ba_* tables).
 """
 
 from datetime import datetime, timezone
+
+from database import get_session
+from database.models.auth import BaSession, BaUser
+from database.models.customer import CuSession, CuUser
 from fastapi import Depends, Header, HTTPException, Request, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import contains_eager
-from database import get_session
-from database.models.auth import BaSession, BaUser
-from database.models.customer import CuSession, CuUser
 
 
 def _extract_bearer_or_cookie_token(

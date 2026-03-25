@@ -8,6 +8,82 @@ on:
 
 jobs:
   # ─────────────────────────────────────────────
+  # Python: lint + unit tests (no DB needed)
+  # ─────────────────────────────────────────────
+  test-python:
+    name: Python Lint & Unit Tests
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v4
+
+      - name: Install dependencies
+        run: uv sync --group dev
+
+      - name: Ruff lint
+        run: uv run ruff check .
+
+      - name: Unit tests
+        run: uv run --package api pytest tests/api/test_schemas.py tests/api/test_session_token.py tests/packages/ -v
+        env:
+          DATABASE_URL: "postgresql+asyncpg://fake:fake@localhost/fake"
+          REDIS_URL: "redis://localhost:6379/0"
+          SESSION_TOKEN_SECRET: "ci-test-secret"
+
+  # ─────────────────────────────────────────────
+  # Python: integration tests (with PostgreSQL)
+  # ─────────────────────────────────────────────
+  test-integration:
+    name: Python Integration Tests
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_USER: test
+          POSTGRES_PASSWORD: test
+          POSTGRES_DB: awaqi_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v4
+
+      - name: Install dependencies
+        run: uv sync --group dev
+
+      - name: Integration tests
+        run: uv run --package api pytest tests/api/test_health.py tests/api/test_chat_endpoints.py tests/api/test_admin_endpoints.py -v
+        env:
+          DATABASE_URL: "postgresql+asyncpg://test:test@localhost:5432/awaqi_test"
+          REDIS_URL: "redis://localhost:6379/0"
+          SESSION_TOKEN_SECRET: "ci-test-secret"
+
+  # ─────────────────────────────────────────────
   # Lint, type-check, and build the Next.js frontend
   # ─────────────────────────────────────────────
   build-web:
@@ -33,4 +109,4 @@ jobs:
         run: npm run build
         working-directory: apps/web
         env:
-          BETTER_AUTH_SECRET: ${{ secrets.BETTER_AUTH_SECRET || 'doh0HF9suOVqBhm6rb2UYu+fcVjtgprQlwO4Zlf4Whs=' }}
+          BETTER_AUTH_SECRET: ${{ secrets.BETTER_AUTH_SECRET }}

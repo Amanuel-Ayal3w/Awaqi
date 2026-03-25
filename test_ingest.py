@@ -17,6 +17,7 @@ import uuid
 
 # Load .env before anything else
 from dotenv import load_dotenv
+
 load_dotenv()
 
 logging.basicConfig(
@@ -110,6 +111,7 @@ async def test_store(pdf_bytes: bytes) -> None:
     """Test 4: Full pipeline via ingest_pdf + DB persistence."""
     logger.info("%s\nTEST 4 — Full ingest_pdf → DB store\n%s", SEP, SEP)
     import hashlib
+
     from ai_engine.ingest import ingest_pdf
     from database.db import AsyncSessionLocal
     from database.models.document import Document, DocumentStatus

@@ -12,6 +12,11 @@ import type {
     LogEntryList,
 } from "@/types/api";
 
+export interface ChatSendOptions {
+    payload: ChatRequest;
+    sessionToken?: string | null;
+}
+
 const apiClient = axios.create({
     baseURL: process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000",
     withCredentials: true,
@@ -54,14 +59,23 @@ apiClient.interceptors.response.use(
 // ── Chat API ──────────────────────────────────────────────────────────────────
 
 export const chatApi = {
-    send: async (payload: ChatRequest): Promise<ChatResponse> => {
-        const { data } = await apiClient.post<ChatResponse>("/v1/chat/send", payload);
+    send: async (payload: ChatRequest, sessionToken?: string | null): Promise<ChatResponse> => {
+        const headers: Record<string, string> = {};
+        if (sessionToken) {
+            headers["X-Session-Token"] = sessionToken;
+        }
+        const { data } = await apiClient.post<ChatResponse>("/v1/chat/send", payload, { headers });
         return data;
     },
 
-    getHistory: async (sessionId: string): Promise<ChatMessage[]> => {
+    getHistory: async (sessionId: string, sessionToken?: string | null): Promise<ChatMessage[]> => {
+        const headers: Record<string, string> = {};
+        if (sessionToken) {
+            headers["X-Session-Token"] = sessionToken;
+        }
         const { data } = await apiClient.get<ChatMessage[]>(
-            `/v1/chat/history/${sessionId}`
+            `/v1/chat/history/${sessionId}`,
+            { headers },
         );
         return data;
     },

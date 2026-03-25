@@ -10,7 +10,9 @@ import { chatApi } from '@/lib/api';
 import {
     createNewSession,
     getOrCreateSessionId,
+    getSessionToken,
     setActiveSession,
+    setSessionToken,
     updateSessionTitle,
 } from '@/lib/chat-session';
 
@@ -33,7 +35,8 @@ export function ChatInterface() {
         }
         hasSavedTitleRef.current = false;
 
-        chatApi.getHistory(sessionIdRef.current).then((history) => {
+        const token = getSessionToken(sessionIdRef.current);
+        chatApi.getHistory(sessionIdRef.current, token).then((history) => {
             if (history.length > 0) {
                 setMessages(
                     history.map((msg, i) => ({
@@ -75,11 +78,16 @@ export function ChatInterface() {
         }
 
         try {
+            const token = getSessionToken(sessionIdRef.current);
             const response = await chatApi.send({
                 message: content,
                 session_id: sessionIdRef.current,
                 language: document.documentElement.lang ?? 'en',
-            });
+            }, token);
+
+            if (response.session_token) {
+                setSessionToken(sessionIdRef.current, response.session_token);
+            }
 
             const botMessage: Message = {
                 id: (Date.now() + 1).toString(),
