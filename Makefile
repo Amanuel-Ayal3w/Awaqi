@@ -1,4 +1,4 @@
-.PHONY: help check build-web test test-unit test-integration lint-py dev
+.PHONY: help check build-web test test-unit test-integration lint-py dev test-db
 
 # --- Colors ---
 GREEN  := \033[0;32m
@@ -55,8 +55,15 @@ lint-py:
 		&& echo "$(GREEN)--- PASS: ruff lint$(RESET)" \
 		|| (echo "$(RED)--- FAIL: ruff lint$(RESET)" && exit 1)
 
+# --- Ensure test database exists --------------------------------------------
+test-db:
+	@PGPASSWORD=postgres psql -U postgres -h localhost -tc \
+		"SELECT 1 FROM pg_database WHERE datname = 'awaqi_db_test'" | grep -q 1 \
+		|| (echo "$(CYAN)Creating awaqi_db_test database...$(RESET)" && \
+			PGPASSWORD=postgres createdb -U postgres -h localhost awaqi_db_test)
+
 # --- Python tests (full suite) ----------------------------------------------
-test:
+test: test-db
 	@echo ""
 	@echo "$(LINE)"
 	@echo "$(BOLD)  PYTHON TESTS (all)$(RESET)"
@@ -76,7 +83,7 @@ test-unit:
 		|| (echo "" && echo "$(RED)--- FAIL: unit tests -- see errors above$(RESET)" && exit 1)
 
 # --- Integration tests only (needs PostgreSQL) ------------------------------
-test-integration:
+test-integration: test-db
 	@echo ""
 	@echo "$(LINE)"
 	@echo "$(BOLD)  INTEGRATION TESTS (needs PostgreSQL)$(RESET)"
