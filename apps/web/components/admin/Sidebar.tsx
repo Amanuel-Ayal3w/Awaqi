@@ -12,37 +12,48 @@ import {
     ChevronLeft,
     Menu,
 } from "lucide-react"
-import { useState } from "react"
+import { useMemo, useState } from "react"
 import { Button } from "@/components/ui/button"
 import { useLocale } from "next-intl"
+import { authClient } from "@/lib/auth-client"
 
 export function AdminSidebar() {
     const pathname = usePathname()
     const locale = useLocale()
     const [isCollapsed, setIsCollapsed] = useState(false)
+    const { data: session } = authClient.useSession()
+    const role = (session?.user as any)?.role as string | undefined
 
-    const sidebarItems = [
-        {
-            title: "Overview",
-            href: `/${locale}/admin`,
-            icon: LayoutDashboard,
-        },
-        {
-            title: "Knowledge Base",
-            href: `/${locale}/admin/knowledge-base`,
-            icon: FileText,
-        },
-        {
-            title: "Users",
-            href: `/${locale}/admin/users`,
-            icon: Users,
-        },
-        {
+    const sidebarItems = useMemo(() => {
+        const items = [
+            {
+                title: "Overview",
+                href: `/${locale}/admin`,
+                icon: LayoutDashboard,
+            },
+            {
+                title: "Knowledge Base",
+                href: `/${locale}/admin/knowledge-base`,
+                icon: FileText,
+            },
+        ]
+
+        if (role === "superadmin") {
+            items.push({
+                title: "Users",
+                href: `/${locale}/admin/users`,
+                icon: Users,
+            })
+        }
+
+        items.push({
             title: "Settings",
             href: `/${locale}/admin/settings`,
             icon: Settings,
-        },
-    ]
+        })
+
+        return items
+    }, [locale, role])
 
     return (
         <aside

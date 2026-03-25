@@ -3,13 +3,27 @@
 import React from 'react';
 import axios from 'axios';
 import { adminApi } from '@/lib/api';
+import { authClient } from '@/lib/auth-client';
 import type { AdminUserItem } from '@/types/api';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Button } from '@/components/ui/button';
+import { useRouter } from 'next/navigation';
+import { useLocale } from 'next-intl';
 
 export default function AdminUsersPage() {
+    const { data: session, isPending } = authClient.useSession();
+    const role = (session?.user as any)?.role as string | undefined;
+    const router = useRouter();
+    const locale = useLocale();
+
+    React.useEffect(() => {
+        if (!isPending && role && role !== 'superadmin') {
+            router.replace(`/${locale}/admin`);
+        }
+    }, [isPending, role, router, locale]);
+
     const [users, setUsers] = React.useState<AdminUserItem[]>([]);
     const [isLoading, setIsLoading] = React.useState(true);
     const [isCreating, setIsCreating] = React.useState(false);
@@ -113,6 +127,10 @@ export default function AdminUsersPage() {
             setDeletingUserId(null);
         }
     };
+
+    if (isPending || role !== 'superadmin') {
+        return null;
+    }
 
     return (
         <div className="flex flex-col gap-6">

@@ -113,6 +113,7 @@ async def list_admin_users(
     current_user: BaUser = Depends(get_current_admin),
     db: AsyncSession = Depends(get_session),
 ):
+    _require_superadmin(current_user)
     result = await db.execute(
         select(BaUser).order_by(BaUser.created_at.desc())
     )
