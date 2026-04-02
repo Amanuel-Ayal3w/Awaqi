@@ -1,261 +1,318 @@
-'use client';
+"use client"
 
-import React from 'react';
-import axios from 'axios';
-import { adminApi } from '@/lib/api';
-import { authClient } from '@/lib/auth-client';
-import type { AdminUserItem } from '@/types/api';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { Button } from '@/components/ui/button';
-import { useRouter } from 'next/navigation';
-import { useLocale } from 'next-intl';
+import { useCallback, useEffect, useMemo, useState } from "react"
+import { ColumnDef } from "@tanstack/react-table"
+import { RefreshCw, Trash2 } from "lucide-react"
+import { adminApi } from "@/lib/api"
+import type { AdminUserItem } from "@/types/api"
+import { DataTable } from "@/components/ui/data-table"
+import { Button } from "@/components/ui/button"
+import { cn } from "@/lib/utils"
+import { Input } from "@/components/ui/input"
+import { Label } from "@/components/ui/label"
+import {
+    Select,
+    SelectContent,
+    SelectItem,
+    SelectTrigger,
+    SelectValue,
+} from "@/components/ui/select"
+import { authClient } from "@/lib/auth-client"
+
+type UserRow = {
+    id: string
+    name: string
+    email: string
+    role: string
+    is_active: boolean
+    created_at: string
+}
 
 export default function AdminUsersPage() {
-    const { data: session, isPending } = authClient.useSession();
-    const role = (session?.user as any)?.role as string | undefined;
-    const router = useRouter();
-    const locale = useLocale();
+    const { data: session } = authClient.useSession()
+    const role = (session?.user as any)?.role as string | undefined
+    const currentUserId = (session?.user as any)?.id as string | undefined
+    const canCreateUser = role === "superadmin"
 
-    React.useEffect(() => {
-        if (!isPending && role && role !== 'superadmin') {
-            router.replace(`/${locale}/admin`);
-        }
-    }, [isPending, role, router, locale]);
+    const [users, setUsers] = useState<UserRow[]>([])
+    const [isLoading, setIsLoading] = useState(true)
+    const [isRefreshing, setIsRefreshing] = useState(false)
+    const [error, setError] = useState<string | null>(null)
+    const [createError, setCreateError] = useState<string | null>(null)
+    const [deleteError, setDeleteError] = useState<string | null>(null)
+    const [isCreating, setIsCreating] = useState(false)
+    const [isDeletingUserId, setIsDeletingUserId] = useState<string | null>(null)
+    const [name, setName] = useState("")
+    const [email, setEmail] = useState("")
+    const [password, setPassword] = useState("")
+    const [newUserRole, setNewUserRole] = useState<"editor" | "superadmin">("editor")
 
-    const [users, setUsers] = React.useState<AdminUserItem[]>([]);
-    const [isLoading, setIsLoading] = React.useState(true);
-    const [isCreating, setIsCreating] = React.useState(false);
-    const [deletingUserId, setDeletingUserId] = React.useState<string | null>(null);
-    const [error, setError] = React.useState<string | null>(null);
-    const [debugInfo, setDebugInfo] = React.useState<string | null>(null);
+    const mapUser = (user: AdminUserItem): UserRow => ({
+        id: user.id,
+        name: user.name ?? "",
+        email: user.email,
+        role: user.role,
+        is_active: user.is_active,
+        created_at: user.created_at,
+    })
 
-    const [name, setName] = React.useState('');
-    const [email, setEmail] = React.useState('');
-    const [password, setPassword] = React.useState('');
-
-    const loadUsers = React.useCallback(async () => {
-        setIsLoading(true);
-        setError(null);
-        setDebugInfo(null);
+    const refreshUsers = useCallback(async () => {
+        setIsRefreshing(true)
+        setError(null)
         try {
-            const data = await adminApi.listUsers();
-            setUsers(data.users);
+            const result = await adminApi.listUsers()
+            setUsers(result.users.map(mapUser))
         } catch (err: unknown) {
-            let detail: string | undefined;
-
-            if (axios.isAxiosError(err)) {
-                detail = err.response?.data?.detail as string | undefined;
-
-                const debugPayload = {
-                    message: err.message,
-                    code: err.code,
-                    status: err.response?.status,
-                    method: err.config?.method,
-                    url: err.config?.url,
-                    baseURL: err.config?.baseURL,
-                    responseData: err.response?.data,
-                };
-
-                setDebugInfo(JSON.stringify(debugPayload, null, 2));
-                console.warn('adminApi.listUsers failed', debugPayload);
-            } else {
-                setDebugInfo(String(err));
-                console.warn('adminApi.listUsers failed (non-axios error)', err);
-            }
-
-            setError(detail ?? 'Failed to load users.');
+            const message = err instanceof Error ? err.message : "Failed to load users"
+            setError(message)
         } finally {
-            setIsLoading(false);
+            setIsLoading(false)
+            setIsRefreshing(false)
         }
-    }, []);
+    }, [])
 
-    React.useEffect(() => {
-        loadUsers();
-    }, [loadUsers]);
-
-    const handleCreateUser = async (event: React.FormEvent) => {
-        event.preventDefault();
-        setIsCreating(true);
-        setError(null);
-
-        try {
-            const response = await fetch('/api/auth/sign-up/email', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
-                credentials: 'omit',
-                body: JSON.stringify({
-                    name,
-                    email,
-                    password,
-                }),
-            });
-
-            if (!response.ok) {
-                const payload = await response.json().catch(() => ({}));
-                const message = payload?.message ?? payload?.error ?? 'Failed to create user.';
-                throw new Error(message);
-            }
-
-            setName('');
-            setEmail('');
-            setPassword('');
-            await loadUsers();
-        } catch (createError) {
-            if (createError instanceof Error) {
-                setError(createError.message);
-            } else {
-                setError('Failed to create user.');
-            }
-        } finally {
-            setIsCreating(false);
-        }
-    };
+    useEffect(() => {
+        void refreshUsers()
+    }, [refreshUsers])
 
     const handleDeleteUser = async (userId: string) => {
-        setDeletingUserId(userId);
-        setError(null);
-        try {
-            await adminApi.deleteUser(userId);
-            await loadUsers();
-        } catch {
-            setError('Failed to remove user.');
-        } finally {
-            setDeletingUserId(null);
+        const shouldDelete = window.confirm("Delete this user?")
+        if (!shouldDelete) {
+            return
         }
-    };
 
-    if (isPending || role !== 'superadmin') {
-        return null;
+        setDeleteError(null)
+        setIsDeletingUserId(userId)
+        try {
+            await adminApi.deleteUser(userId)
+            await refreshUsers()
+        } catch (err: unknown) {
+            const message = err instanceof Error ? err.message : "Failed to delete user"
+            setDeleteError(message)
+        } finally {
+            setIsDeletingUserId(null)
+        }
+    }
+
+    const columns: ColumnDef<UserRow>[] = useMemo(
+        () => [
+            {
+                accessorKey: "name",
+                header: "Name",
+                cell: ({ row }) => {
+                    const value = row.getValue("name") as string
+                    return <span className="font-medium">{value || "—"}</span>
+                },
+            },
+            {
+                accessorKey: "email",
+                header: "Email",
+                cell: ({ row }) => (
+                    <span className="text-sm text-muted-foreground">{row.getValue("email") as string}</span>
+                ),
+            },
+            {
+                accessorKey: "role",
+                header: "Role",
+                cell: ({ row }) => {
+                    const value = (row.getValue("role") as string).toLowerCase()
+                    return <span className="capitalize">{value}</span>
+                },
+            },
+            {
+                accessorKey: "is_active",
+                header: "Status",
+                cell: ({ row }) => {
+                    const isActive = row.getValue("is_active") as boolean
+                    return (
+                        <span
+                            className={cn(
+                                "inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-semibold",
+                                isActive
+                                    ? "bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400"
+                                    : "bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400"
+                            )}
+                        >
+                            {isActive ? "Active" : "Inactive"}
+                        </span>
+                    )
+                },
+            },
+            {
+                accessorKey: "created_at",
+                header: "Created",
+                cell: ({ row }) => {
+                    const value = row.getValue("created_at") as string
+                    return (
+                        <span className="text-xs text-muted-foreground">
+                            {new Date(value).toLocaleString()}
+                        </span>
+                    )
+                },
+            },
+            {
+                id: "actions",
+                header: "Actions",
+                cell: ({ row }) => {
+                    const userId = row.original.id
+                    const isCurrentUser = currentUserId === userId
+                    const isDeleting = isDeletingUserId === userId
+
+                    return (
+                        <div className="flex justify-end">
+                            <Button
+                                variant="ghost"
+                                size="icon"
+                                className="h-8 w-8 text-destructive"
+                                onClick={() => void handleDeleteUser(userId)}
+                                disabled={isCurrentUser || isDeleting}
+                                title={isCurrentUser ? "You cannot delete your own account" : "Delete user"}
+                            >
+                                <Trash2 className={cn("h-4 w-4", isDeleting && "animate-pulse")} />
+                            </Button>
+                        </div>
+                    )
+                },
+            },
+        ],
+        [currentUserId, isDeletingUserId]
+    )
+
+    const handleCreateUser = async (e: React.FormEvent) => {
+        e.preventDefault()
+        setCreateError(null)
+        setIsCreating(true)
+
+        const trimmedName = name.trim()
+        const trimmedEmail = email.trim().toLowerCase()
+
+        try {
+            const result = await authClient.admin.createUser({
+                name: trimmedName,
+                email: trimmedEmail,
+                password,
+                role: newUserRole,
+            })
+
+            if (result.error) {
+                setCreateError(result.error.message ?? "Failed to create user")
+                return
+            }
+
+            setName("")
+            setEmail("")
+            setPassword("")
+            setNewUserRole("editor")
+            await refreshUsers()
+        } catch (err: unknown) {
+            const message = err instanceof Error ? err.message : "Failed to create user"
+            setCreateError(message)
+        } finally {
+            setIsCreating(false)
+        }
     }
 
     return (
-        <div className="flex flex-col gap-6">
-            <div>
-                <h1 className="text-3xl font-bold tracking-tight">User Management</h1>
-                <p className="text-muted-foreground">
-                    Add, view, and remove admin users.
-                </p>
+        <div className="space-y-6">
+            <div className="flex items-start justify-between gap-4">
+                <div>
+                    <h1 className="text-3xl font-bold tracking-tight">Users</h1>
+                    <p className="text-muted-foreground">
+                        Manage administrator accounts.
+                    </p>
+                </div>
+                <Button
+                    variant="outline"
+                    size="sm"
+                    className="gap-2"
+                    onClick={() => void refreshUsers()}
+                    disabled={isRefreshing}
+                >
+                    <RefreshCw className={cn("h-4 w-4", isRefreshing && "animate-spin")} />
+                    Refresh
+                </Button>
             </div>
 
-            <Card>
-                <CardHeader>
-                    <CardTitle>Add Admin User</CardTitle>
-                </CardHeader>
-                <CardContent>
-                    <form onSubmit={handleCreateUser} className="grid gap-4 md:grid-cols-3">
-                        <div className="space-y-2">
-                            <Label htmlFor="user-name">Name</Label>
-                            <Input
-                                id="user-name"
-                                value={name}
-                                onChange={(e) => setName(e.target.value)}
-                                placeholder="Admin Name"
-                                required
-                                disabled={isCreating}
-                            />
-                        </div>
-                        <div className="space-y-2">
-                            <Label htmlFor="user-email">Email</Label>
-                            <Input
-                                id="user-email"
-                                type="email"
-                                value={email}
-                                onChange={(e) => setEmail(e.target.value)}
-                                placeholder="admin@awaqi.io"
-                                required
-                                disabled={isCreating}
-                            />
-                        </div>
-                        <div className="space-y-2">
-                            <Label htmlFor="user-password">Password</Label>
-                            <Input
-                                id="user-password"
-                                type="password"
-                                value={password}
-                                onChange={(e) => setPassword(e.target.value)}
-                                placeholder="••••••••"
-                                required
-                                disabled={isCreating}
-                            />
-                        </div>
+            {canCreateUser && (
+                <form onSubmit={handleCreateUser} className="grid gap-4 rounded-lg border p-4 md:grid-cols-4">
+                    <div className="space-y-2 md:col-span-1">
+                        <Label htmlFor="new-user-name">Name</Label>
+                        <Input
+                            id="new-user-name"
+                            value={name}
+                            onChange={(e) => setName(e.target.value)}
+                            placeholder="Jane Doe"
+                            required
+                            disabled={isCreating}
+                        />
+                    </div>
 
-                        <div className="md:col-span-3 flex justify-end">
-                            <Button type="submit" disabled={isCreating}>
-                                {isCreating ? 'Creating...' : 'Add User'}
-                            </Button>
-                        </div>
-                    </form>
-                </CardContent>
-            </Card>
+                    <div className="space-y-2 md:col-span-1">
+                        <Label htmlFor="new-user-email">Email</Label>
+                        <Input
+                            id="new-user-email"
+                            type="email"
+                            value={email}
+                            onChange={(e) => setEmail(e.target.value)}
+                            placeholder="jane@awaqi.io"
+                            required
+                            disabled={isCreating}
+                        />
+                    </div>
 
-            <Card>
-                <CardHeader>
-                    <CardTitle>Admin Users ({users.length})</CardTitle>
-                </CardHeader>
-                <CardContent>
-                    {error && (
-                        <div className="mb-3 space-y-3">
-                            <div className="flex items-center justify-between gap-3">
-                                <p className="text-sm text-destructive">{error}</p>
-                                <Button variant="outline" size="sm" onClick={loadUsers}>
-                                    Retry
-                                </Button>
-                            </div>
-                            {debugInfo && (
-                                <pre className="text-xs bg-muted/50 border rounded-md p-3 overflow-auto">
-                                    {debugInfo}
-                                </pre>
-                            )}
-                        </div>
+                    <div className="space-y-2 md:col-span-1">
+                        <Label htmlFor="new-user-password">Password</Label>
+                        <Input
+                            id="new-user-password"
+                            type="password"
+                            value={password}
+                            onChange={(e) => setPassword(e.target.value)}
+                            required
+                            disabled={isCreating}
+                        />
+                    </div>
+
+                    <div className="space-y-2 md:col-span-1">
+                        <Label>Role</Label>
+                        <Select
+                            value={newUserRole}
+                            onValueChange={(value) => setNewUserRole(value as "editor" | "superadmin")}
+                            disabled={isCreating}
+                        >
+                            <SelectTrigger>
+                                <SelectValue placeholder="Select role" />
+                            </SelectTrigger>
+                            <SelectContent>
+                                <SelectItem value="editor">Editor</SelectItem>
+                                <SelectItem value="superadmin">Superadmin</SelectItem>
+                            </SelectContent>
+                        </Select>
+                    </div>
+
+                    <div className="md:col-span-4 flex items-center justify-between gap-3">
+                        <p className="text-xs text-muted-foreground">
+                            Only superadmins can create admin users.
+                        </p>
+                        <Button type="submit" disabled={isCreating}>
+                            {isCreating ? "Adding…" : "Add User"}
+                        </Button>
+                    </div>
+
+                    {createError && (
+                        <p className="md:col-span-4 text-sm text-destructive">{createError}</p>
                     )}
+                </form>
+            )}
 
-                    {isLoading ? (
-                        <p className="text-sm text-muted-foreground">Loading users...</p>
-                    ) : !error && users.length === 0 ? (
-                        <p className="text-sm text-muted-foreground">No users found.</p>
-                    ) : (
-                        <div className="overflow-x-auto">
-                            <table className="w-full text-sm">
-                                <thead>
-                                    <tr className="border-b text-left">
-                                        <th className="py-2 pr-4 font-medium">Name</th>
-                                        <th className="py-2 pr-4 font-medium">Email</th>
-                                        <th className="py-2 pr-4 font-medium">Role</th>
-                                        <th className="py-2 pr-4 font-medium">Status</th>
-                                        <th className="py-2 pr-4 font-medium">Created</th>
-                                        <th className="py-2 text-right font-medium">Actions</th>
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    {users.map((user) => (
-                                        <tr key={user.id} className="border-b">
-                                            <td className="py-2 pr-4">{user.name || '-'}</td>
-                                            <td className="py-2 pr-4">{user.email}</td>
-                                            <td className="py-2 pr-4">{user.role}</td>
-                                            <td className="py-2 pr-4">{user.is_active ? 'active' : 'inactive'}</td>
-                                            <td className="py-2 pr-4">{new Date(user.created_at).toLocaleString()}</td>
-                                            <td className="py-2 text-right">
-                                                <Button
-                                                    variant="destructive"
-                                                    size="sm"
-                                                    onClick={() => handleDeleteUser(user.id)}
-                                                    disabled={deletingUserId === user.id}
-                                                >
-                                                    {deletingUserId === user.id ? 'Removing...' : 'Remove'}
-                                                </Button>
-                                            </td>
-                                        </tr>
-                                    ))}
-                                </tbody>
-                            </table>
-                        </div>
-                    )}
-                </CardContent>
-            </Card>
+            {deleteError && <p className="text-sm text-destructive">{deleteError}</p>}
+
+            {error ? (
+                <p className="text-sm text-destructive">{error}</p>
+            ) : isLoading ? (
+                <p className="text-sm text-muted-foreground">Loading users…</p>
+            ) : (
+                <DataTable columns={columns} data={users} />
+            )}
         </div>
-    );
+    )
 }

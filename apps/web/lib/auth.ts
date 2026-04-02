@@ -1,6 +1,8 @@
 import { betterAuth } from "better-auth";
 import { Pool } from "pg";
 import { getValidatedBetterAuthSecret } from "@/lib/auth-secret";
+import { admin } from "better-auth/plugins";
+import { adminAc, userAc } from "better-auth/plugins/admin/access";
 
 const betterAuthSecret = getValidatedBetterAuthSecret();
 
@@ -12,6 +14,7 @@ export const auth = betterAuth({
   }),
   emailAndPassword: {
     enabled: true,
+    disableSignUp: true,
   },
   advanced: {
     // Generate UUID v4 IDs to match the UUID primary key columns in ba_* tables
@@ -47,6 +50,16 @@ export const auth = betterAuth({
   verification: {
     modelName: "ba_verification",
   },
+  plugins: [
+    admin({
+      defaultRole: "editor",
+      adminRoles: ["superadmin"],
+      roles: {
+        superadmin: adminAc,
+        editor: userAc,
+      },
+    }),
+  ],
 });
 
 
