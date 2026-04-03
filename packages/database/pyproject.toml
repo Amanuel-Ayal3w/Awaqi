@@ -9,6 +9,7 @@ dependencies = [
     "alembic",
     "asyncpg",
     "psycopg2-binary",
+    "bcrypt>=4.2.0",
     "redis",
     "python-dotenv",
     "utils",

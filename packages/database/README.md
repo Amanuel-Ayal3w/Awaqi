@@ -198,6 +198,20 @@ To rollback one step:
 uv run alembic downgrade -1
 ```
 
+## Seed default super admin
+
+To create (or update) the default admin user and credentials in `ba_user` + `ba_account`:
+
+```bash
+cd packages/database
+uv run python scripts/seed_super_admin.py
+```
+
+This seeds:
+- email: `admin@admin.com`
+- password: `12345678`
+- role: `superadmin`
+
 ## Auth flow (how ba_* tables are used)
 
 Better Auth (running inside the Next.js app) owns the `ba_*` tables. It handles:
