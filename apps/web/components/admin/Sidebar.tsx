@@ -1,6 +1,6 @@
 "use client"
 
-import { usePathname } from "next/navigation"
+import { usePathname, useRouter } from "next/navigation"
 import Link from "next/link"
 import { cn } from "@/lib/utils"
 import {
@@ -19,10 +19,16 @@ import { authClient } from "@/lib/auth-client"
 
 export function AdminSidebar() {
     const pathname = usePathname()
+    const router = useRouter()
     const locale = useLocale()
     const [isCollapsed, setIsCollapsed] = useState(false)
     const { data: session } = authClient.useSession()
     const role = (session?.user as any)?.role as string | undefined
+
+    const handleLogout = async () => {
+        await authClient.signOut()
+        router.push(`/${locale}/admin/login`)
+    }
 
     const sidebarItems = useMemo(() => {
         const items = [
@@ -108,6 +114,7 @@ export function AdminSidebar() {
                         "w-full justify-start gap-3",
                         isCollapsed && "justify-center px-2"
                     )}
+                    onClick={handleLogout}
                 >
                     <LogOut className="h-4 w-4" />
                     {!isCollapsed && <span>Logout</span>}
