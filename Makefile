@@ -33,7 +33,8 @@ dev:
 	@echo "$(LINE)"
 	@set -a && [ -f .env ] && . ./.env; set +a; \
 		trap 'kill 0' INT TERM; \
-		uv run uvicorn apps.api.main:app --reload --host 0.0.0.0 --port 8000 & \
+		uv sync --package api; \
+		uv run --package api uvicorn apps.api.main:app --reload --host 0.0.0.0 --port 8000 & \
 		cd apps/web && npm run dev & \
 		wait
 
