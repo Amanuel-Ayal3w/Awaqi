@@ -7,6 +7,8 @@ Import from here in other packages:
 """
 
 from database.db import AsyncSessionLocal, engine, get_session, init_db
+from database.fts import fts_search_chunk_ids
+from database.vector_search import vector_search_chunk_ids
 from database.models import (
     BaSession,
     BaUser,
@@ -28,6 +30,8 @@ __all__ = [
     "redis_client",
     "get_redis",
     "ping_redis",
+    "fts_search_chunk_ids",
+    "vector_search_chunk_ids",
     # ORM models
     "BaUser",
     "BaSession",

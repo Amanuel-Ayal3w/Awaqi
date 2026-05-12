@@ -1,6 +1,6 @@
 from .auth import BaSession, BaUser
 from .customer import CuSession, CuUser
-from .document import Document, DocumentChunk
+from .document import Document, DocumentChunk, DocumentStatus, ProcessingStage
 from .session import ChatSession, Feedback, Message
 
 __all__ = [
@@ -10,6 +10,8 @@ __all__ = [
     "CuSession",
     "Document",
     "DocumentChunk",
+    "DocumentStatus",
+    "ProcessingStage",
     "ChatSession",
     "Message",
     "Feedback",

@@ -8,8 +8,9 @@ import type { AdminUserItem } from "@/types/api"
 import { DataTable } from "@/components/ui/data-table"
 import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
-import { Input } from "@/components/ui/input"
+import { Switch } from "@/components/ui/switch"
 import { Label } from "@/components/ui/label"
+import { Input } from "@/components/ui/input"
 import {
     Select,
     SelectContent,
@@ -42,6 +43,8 @@ export default function AdminUsersPage() {
     const [deleteError, setDeleteError] = useState<string | null>(null)
     const [isCreating, setIsCreating] = useState(false)
     const [isDeletingUserId, setIsDeletingUserId] = useState<string | null>(null)
+    const [patchingUserId, setPatchingUserId] = useState<string | null>(null)
+    const [patchError, setPatchError] = useState<string | null>(null)
     const [name, setName] = useState("")
     const [email, setEmail] = useState("")
     const [password, setPassword] = useState("")
@@ -115,26 +118,85 @@ export default function AdminUsersPage() {
                 accessorKey: "role",
                 header: "Role",
                 cell: ({ row }) => {
+                    const userId = row.original.id
                     const value = (row.getValue("role") as string).toLowerCase()
-                    return <span className="capitalize">{value}</span>
+                    if (!canCreateUser) {
+                        return <span className="capitalize">{value}</span>
+                    }
+                    return (
+                        <Select
+                            value={value}
+                            disabled={patchingUserId === userId}
+                            onValueChange={(v) => {
+                                void (async () => {
+                                    setPatchError(null)
+                                    setPatchingUserId(userId)
+                                    try {
+                                        await adminApi.patchUser(userId, { role: v })
+                                        await refreshUsers()
+                                    } catch (err: unknown) {
+                                        const message = err instanceof Error ? err.message : "Failed to update role"
+                                        setPatchError(message)
+                                    } finally {
+                                        setPatchingUserId(null)
+                                    }
+                                })()
+                            }}
+                        >
+                            <SelectTrigger className="h-8 w-[140px]">
+                                <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                                <SelectItem value="editor">Editor</SelectItem>
+                                <SelectItem value="superadmin">Superadmin</SelectItem>
+                            </SelectContent>
+                        </Select>
+                    )
                 },
             },
             {
                 accessorKey: "is_active",
-                header: "Status",
+                header: "Active",
                 cell: ({ row }) => {
+                    const userId = row.original.id
                     const isActive = row.getValue("is_active") as boolean
+                    const isCurrentUser = currentUserId === userId
+                    if (!canCreateUser) {
+                        return (
+                            <span
+                                className={cn(
+                                    "inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-semibold",
+                                    isActive
+                                        ? "bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400"
+                                        : "bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400",
+                                )}
+                            >
+                                {isActive ? "Active" : "Inactive"}
+                            </span>
+                        )
+                    }
                     return (
-                        <span
-                            className={cn(
-                                "inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-semibold",
-                                isActive
-                                    ? "bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400"
-                                    : "bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400"
-                            )}
-                        >
-                            {isActive ? "Active" : "Inactive"}
-                        </span>
+                        <Switch
+                            checked={isActive}
+                            disabled={isCurrentUser || patchingUserId === userId}
+                            title={isCurrentUser ? "You cannot deactivate your own account" : undefined}
+                            onCheckedChange={(checked) => {
+                                void (async () => {
+                                    setPatchError(null)
+                                    setPatchingUserId(userId)
+                                    try {
+                                        await adminApi.patchUser(userId, { is_active: checked })
+                                        await refreshUsers()
+                                    } catch (err: unknown) {
+                                        const message =
+                                            err instanceof Error ? err.message : "Failed to update status"
+                                        setPatchError(message)
+                                    } finally {
+                                        setPatchingUserId(null)
+                                    }
+                                })()
+                            }}
+                        />
                     )
                 },
             },
@@ -175,7 +237,7 @@ export default function AdminUsersPage() {
                 },
             },
         ],
-        [currentUserId, isDeletingUserId]
+        [canCreateUser, currentUserId, isDeletingUserId, patchingUserId, refreshUsers]
     )
 
     const handleCreateUser = async (e: React.FormEvent) => {
@@ -305,6 +367,7 @@ export default function AdminUsersPage() {
             )}
 
             {deleteError && <p className="text-sm text-destructive">{deleteError}</p>}
+            {patchError && <p className="text-sm text-destructive">{patchError}</p>}
 
             {error ? (
                 <p className="text-sm text-destructive">{error}</p>

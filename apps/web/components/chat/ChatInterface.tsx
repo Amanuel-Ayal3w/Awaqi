@@ -7,6 +7,7 @@ import { MessageList } from './MessageList';
 import { ChatInput } from './ChatInput';
 import { Message, Attachment } from './types';
 import { chatApi } from '@/lib/api';
+import { Button } from '@/components/ui/button';
 import {
     createNewSession,
     getOrCreateSessionId,
@@ -43,6 +44,10 @@ export function ChatInterface() {
                         id: `history-${i}`,
                         role: msg.role as 'user' | 'assistant',
                         content: msg.content,
+                        citations:
+                            msg.citations && msg.citations.length > 0
+                                ? msg.citations
+                                : undefined,
                     }))
                 );
                 hasSavedTitleRef.current = true;
@@ -93,6 +98,10 @@ export function ChatInterface() {
                 id: (Date.now() + 1).toString(),
                 role: 'assistant',
                 content: response.response_text,
+                citations:
+                    response.citations && response.citations.length > 0
+                        ? response.citations
+                        : undefined,
             };
             setMessages((prev) => [...prev, botMessage]);
         } catch {
@@ -107,9 +116,41 @@ export function ChatInterface() {
         }
     };
 
+    const handleExportTranscript = async () => {
+        if (messages.length === 0) return;
+        try {
+            const token = getSessionToken(sessionIdRef.current);
+            const text = await chatApi.exportTranscript(sessionIdRef.current, token);
+            const blob = new Blob([text], { type: 'text/plain;charset=utf-8' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `awaqi-chat-${sessionIdRef.current}.txt`;
+            a.rel = 'noopener';
+            document.body.appendChild(a);
+            a.click();
+            a.remove();
+            URL.revokeObjectURL(url);
+        } catch {
+            // keep UX quiet; user can retry
+        }
+    };
+
     return (
         <div className="flex flex-col h-full w-full bg-background/50">
             <div className="flex-1 w-full max-w-3xl mx-auto flex flex-col h-full overflow-hidden">
+                <div className="flex justify-end px-4 pt-3 shrink-0">
+                    <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        className="text-muted-foreground"
+                        disabled={isLoading || messages.length === 0}
+                        onClick={() => void handleExportTranscript()}
+                    >
+                        {t('exportTranscript')}
+                    </Button>
+                </div>
                 <MessageList messages={messages} isLoading={isLoading} />
                 <div className="p-4 pb-6 w-full">
                     <ChatInput onSend={handleSendMessage} disabled={isLoading} />
