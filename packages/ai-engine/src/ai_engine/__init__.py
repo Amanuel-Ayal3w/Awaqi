@@ -1,5 +1,4 @@
 """ai-engine — Core AI logic for Awaqi."""
 
-from ai_engine.ingest import ingest_pdf
-
-__all__ = ["ingest_pdf"]
+# Import submodules explicitly to avoid loading database config on ``import ai_engine``.
+__all__: list[str] = []

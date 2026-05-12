@@ -22,7 +22,9 @@
         "uploadImage": "Upload Image",
         "uploadDocument": "Upload Document",
         "googleDrive": "Google Drive",
-        "addAttachment": "Add attachment"
+        "addAttachment": "Add attachment",
+        "sources": "Sources",
+        "exportTranscript": "Export transcript"
     },
     "auth": {
         "welcomeBack": "Welcome back",

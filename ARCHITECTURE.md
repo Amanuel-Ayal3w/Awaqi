@@ -251,6 +251,24 @@ sequenceDiagram
 3. The document is processed (OCR, text extraction, chunking, and embedding generation)
 4. The API/Processor safely handles writing to PostgreSQL (pgvector), ensuring a single entry point to the database
 
+### 2.1 Document ingestion lifecycle (Phase A contract)
+
+**Single transaction rule (re-index / overwrite):** For a given `documents.id`, replacing indexed content must run in **one database transaction**: delete all existing `document_chunks` for that `document_id`, insert new rows (content, embedding, `chunk_metadata`, generated `content_tsv`), then update `documents.status` and `processing_stage`. This prevents duplicate vectors and orphan chunks (AWA-16).
+
+**Idempotency and registry keys:**
+
+| Key | Purpose |
+| --- | --- |
+| `documents.file_hash` | SHA-256 of **raw file bytes**; unique. Primary dedup for uploads and binary-identical scraper files. |
+| `documents.source_url` + `documents.byte_size` | Logical identity for scraper dedup (AWA-7). Optional `registry_key` (e.g. hash of `url + ':' + str(size)`) may be stored for quick lookups when the same URL is re-fetched. |
+| Same bytes, different URLs | Same `file_hash`; second insert blocked unless admin chooses **overwrite**, which re-runs the pipeline on the existing row. |
+
+**Statuses (`documents.status`):** `pending` → `processing` (work in flight) → `indexed` | `failed` | `requires_manual_review`. Manual-review is used when OCR mean confidence is below threshold and no searchable chunks should be written (AWA-9).
+
+**Processing stages (`documents.processing_stage`):** While `status=processing`, the UI may show `parsing` → `chunking` → `embedding` → `indexing` (FTS/pgvector row complete). Cleared or set to `complete` when `status=indexed`.
+
+**Modules (SDS naming):** `WebScraper` / scraper job → bytes + metadata → `DocumentProcessor` (HTML / PDF / OCR) → `ChunkingService` (token windows) → `E5Embedder` (passage prefix) → PostgreSQL (`document_chunks`, `content_tsv` GIN for hybrid FTS). Extractor mode is selectable via `INGEST_EXTRACTOR` (`native` vs `gemini`) during migration off Gemini-only extraction.
+
 ## Development Workflow
 
 ### Adding Dependencies
