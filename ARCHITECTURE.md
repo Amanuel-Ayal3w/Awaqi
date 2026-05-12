@@ -15,15 +15,15 @@ Awaqi is an AI-powered Support Bot for the Ethiopian Revenue Authority, designed
 ### Backend
 - **API Framework**: FastAPI (Python 3.12+)
 - **Package Manager**: uv (Universal Python Project Manager)
-- **LLM**: Gemini 2.0 Flash (text extraction via `ai-engine/extractor.py`)
-- **Embeddings**: Gemini Embedding API (`gemini-embedding-001`, 1024-dim, via `ai-engine/embedder.py`)
+- **LLM**: Gemini 2.0 Flash (text extraction and answer generation via `ai-engine/extractor.py`, `ai-engine/rag_answer.py`)
+- **Embeddings**: `intfloat/multilingual-e5-large` (local, via HuggingFace Transformers + PyTorch, 1024-dim, `ai-engine/e5_embedder.py`). Uses `passage:` prefix for indexing, `query:` prefix for retrieval.
 - **Vector Database**: PostgreSQL + pgvector (models implemented, IVFFlat index)
 
 ### Infrastructure
 - **Containerization**: Docker & Docker Compose
 - **Database**: PostgreSQL 16 + pgvector (via `packages/database`, Alembic migrations)
 - **Session Storage**: Redis (configured in `packages/database/redis_client.py`)
-- **Rate Limiting**: Redis-based (15 req / 10 min per IP, via `apps/api/deps_rate_limit.py`, implemented)
+- **Rate Limiting**: Redis-based (100 req / 10 min per IP, via `apps/api/deps_rate_limit.py`, implemented)
 
 ## Monorepo Structure
 
@@ -120,7 +120,7 @@ Sessions are tracked both client-side (for fast sidebar rendering) and server-si
 **Implemented**:
 - `extractor.py`: PDF text extraction via Gemini 2.0 Flash (per-page, handles OCR natively)
 - `chunker.py`: Sliding-window text chunking (~4000 chars with 400-char overlap, page metadata)
-- `embedder.py`: Embedding generation via Gemini Embedding API (`gemini-embedding-001`, 1024-dim)
+- `e5_embedder.py`: Embedding generation via `intfloat/multilingual-e5-large` (local, 1024-dim, `passage:`/`query:` prefixes)
 - `ingest.py`: Orchestrates extract -> chunk -> embed -> persist to PostgreSQL
 
 **Planned** (not yet implemented):
@@ -132,7 +132,7 @@ Sessions are tracked both client-side (for fast sidebar rendering) and server-si
 **Purpose**: PostgreSQL schemas, vector operations, caching, and ORM.
 
 **Implemented Models**:
-- `Document` & `DocumentChunk`: Regulatory documents and ~4000-char chunks with 1024-dim vector embeddings (Gemini Embedding API)
+- `Document` & `DocumentChunk`: Regulatory documents and ~4000-char chunks with 1024-dim vector embeddings (`multilingual-e5-large`)
 - `BaUser` & `BaSession`: Admin auth tables managed by Better Auth (with custom `role` and `is_active` fields)
 - `CuUser` & `CuSession`: Customer auth tables managed by Better Auth
 - `ChatSession` & `Message`: Conversation history linking UUIDs and roles
@@ -323,7 +323,7 @@ Same pattern using `cu_session` + `cu_user` tables and the `get_current_customer
 - **Admins**: Better Auth email/password login via `ba_*` tables with role-based access (`superadmin` / `editor`); destructive admin actions require `superadmin`
 
 ### Rate Limiting
-- 15 requests per 10 minutes per IP, enforced via Redis `INCR` + `EXPIRE` on `rate:{ip}` keys
+- 100 requests per 10 minutes per IP, enforced via Redis `INCR` + `EXPIRE` on `rate:{ip}` keys
 - Applied to `POST /v1/chat/send` and `GET /v1/chat/history/{session_id}`
 - Returns HTTP 429 with `Retry-After` header when the limit is exceeded
 - Respects `X-Forwarded-For` for deployments behind a reverse proxy

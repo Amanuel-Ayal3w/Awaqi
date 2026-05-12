@@ -23,6 +23,7 @@ Usage:
 import os
 import uuid
 from collections.abc import AsyncGenerator
+from typing import Awaitable, cast
 
 import redis.asyncio as aioredis
 from dotenv import load_dotenv
@@ -83,6 +84,6 @@ async def get_redis() -> AsyncGenerator[aioredis.Redis, None]:
 async def ping_redis() -> bool:
     """Return True if Redis is reachable, False otherwise."""
     try:
-        return await redis_client.ping()
+        return await cast(Awaitable[bool], redis_client.ping())
     except Exception:
         return False
