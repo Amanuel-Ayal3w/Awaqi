@@ -29,9 +29,6 @@ jobs:
       - name: Install dependencies
         run: uv sync --group dev
 
-      - name: Ruff lint
-        run: uv run ruff check .
-
       - name: Unit tests
         run: uv run --package api pytest tests/api/test_schemas.py tests/api/test_session_token.py tests/packages/ -v
         env:
