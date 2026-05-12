@@ -8,6 +8,7 @@ Document and DocumentChunk ORM models.
 import uuid
 from datetime import date, datetime, timezone
 from enum import Enum as PyEnum
+from typing import TYPE_CHECKING
 
 from pgvector.sqlalchemy import Vector
 from sqlalchemy import (
@@ -23,8 +24,6 @@ from sqlalchemy import (
     UniqueConstraint,
 )
 from sqlalchemy.dialects.postgresql import JSONB, UUID
-from typing import TYPE_CHECKING
-
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from database.base import Base

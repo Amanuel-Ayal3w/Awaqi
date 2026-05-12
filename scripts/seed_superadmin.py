@@ -14,17 +14,15 @@ import uuid
 from datetime import datetime, timezone
 from getpass import getpass
 
-# Allow running from repo root without installing the package
-sys.path.insert(0, "packages/database/src")
-
-from dotenv import load_dotenv
-
-load_dotenv()
-
 import bcrypt
+from dotenv import load_dotenv
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
+# Allow running from repo root without installing the package
+sys.path.insert(0, "packages/database/src")
+
+load_dotenv()
 
 # ---------------------------------------------------------------------------
 # DB setup (mirrors packages/database/src/database/db.py but standalone)
@@ -105,10 +103,10 @@ async def seed(email: str, name: str, password: str) -> None:
 
         await session.commit()
 
-    print(f"\n✅  Superadmin seeded successfully!")
+    print("\n✅  Superadmin seeded successfully!")
     print(f"   Email : {email}")
     print(f"   Name  : {name}")
-    print(f"   Role  : superadmin")
+    print("   Role  : superadmin")
 
 
 # ---------------------------------------------------------------------------

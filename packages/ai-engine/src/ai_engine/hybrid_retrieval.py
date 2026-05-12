@@ -9,11 +9,10 @@ import logging
 import uuid
 from collections.abc import Sequence
 
-from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession
-
 from database import fts_search_chunk_ids, vector_search_chunk_ids
 from database.models.document import DocumentChunk
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from ai_engine.e5_embedder import embed_query_sync
 from ai_engine.query_nlu import build_e5_query_text

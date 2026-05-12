@@ -1,6 +1,9 @@
 """Heuristic extraction tests."""
 
-from ai_engine.heuristics import guess_article_number_from_text, guess_proclamation_number
+from ai_engine.heuristics import (
+    guess_article_number_from_text,
+    guess_proclamation_number,
+)
 
 
 def test_guess_proclamation() -> None:
