@@ -21,6 +21,7 @@ Usage:
 """
 
 import os
+import uuid
 from collections.abc import AsyncGenerator
 
 import redis.asyncio as aioredis
@@ -45,12 +46,19 @@ redis_client: aioredis.Redis = aioredis.Redis(connection_pool=_pool)
 # TTL constants
 # ---------------------------------------------------------------------------
 RATE_LIMIT_WINDOW: int = 60 * 10   # 10-minute rolling window
-RATE_LIMIT_MAX: int = 15           # max requests per window per IP
+RATE_LIMIT_MAX: int = 100           # max requests per window per IP
+
+GUEST_SESSION_TTL: int = 60 * 30   # 30-minute inactivity window
 
 
 def rate_limit_key(ip: str) -> str:
     """Redis key for IP-based rate-limit counter."""
     return f"rate:{ip}"
+
+
+def guest_session_key(session_id: uuid.UUID | str) -> str:
+    """Redis key for a guest chat session hash."""
+    return f"guest:session:{session_id}"
 
 
 # ---------------------------------------------------------------------------

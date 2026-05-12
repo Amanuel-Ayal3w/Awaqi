@@ -57,6 +57,13 @@ class ChatSession(Base):
         nullable=True,
         index=True,
     )
+    # Set when a guest claims their session after registering as a customer
+    cu_user_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("cu_user.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
     language: Mapped[str] = mapped_column(String(8), nullable=False, default="am")
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc)
