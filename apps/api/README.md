@@ -94,6 +94,12 @@ The API will be available at `http://localhost:8000`.
 | `DATABASE_URL` | `postgresql+asyncpg://user:password@localhost:5432/awaqi_db` | Async PostgreSQL connection |
 | `REDIS_URL` | `redis://localhost:6379/0` | Redis connection |
 | `ALLOWED_ORIGINS` | `http://localhost:3000,http://127.0.0.1:3000` | Comma-separated CORS origins |
+| `SCRAPER_SCHEDULER_ENABLED` | `true` | When `true`, the API starts a daily MoR scrape job at **00:00** `Africa/Addis_Ababa` |
+| `MOR_SCRAPE_SEED_URLS` | (see `packages/ai-engine` scraper defaults) | Comma-separated listing URLs on mor.gov.et |
+| `MOR_SCRAPE_MAX_DEPTH` | `1` | Same-site link crawl depth after seeds (`0` = seeds only) |
+| `MOR_SCRAPE_MAX_PAGES` | `40` | Max HTML pages fetched per scrape run |
+| `MOR_SCRAPE_MAX_LINKS` | `30` | Max PDF URLs downloaded / ingested per run |
+| `MOR_SCRAPER_USER_AGENT` | `AwaqiBot/1.0 (...)` | HTTP User-Agent for outbound scraper requests |
 
 ## Endpoints
 
@@ -119,7 +125,7 @@ The API will be available at `http://localhost:8000`.
 | `DELETE` | `/v1/admin/users/{user_id}` | Admin | Delete an admin user |
 | `POST` | `/v1/admin/upload` | Admin | Upload a document (PDF) for ingestion |
 | `GET` | `/v1/admin/logs` | Admin | Fetch recent user query logs |
-| `POST` | `/v1/admin/scrape` | Admin | Trigger a scraper job |
+| `POST` | `/v1/admin/scrape` | Superadmin | Run one MoR scrape cycle (same entrypoint as the scheduled job) |
 
 ## Authentication
 
@@ -145,7 +151,7 @@ Defined in `schemas.py`:
 | `FeedbackRequest` | `POST /v1/chat/feedback/*` — `{score, comment?}` |
 | `DocumentStatus` | `POST /v1/admin/upload` — `{doc_id, status}` |
 | `LogEntryList` | `GET /v1/admin/logs` — `{logs: [{timestamp, level, message}]}` |
-| `ScraperStatus` | `POST /v1/admin/scrape` — `{job_id, status}` |
+| *(inline)* | `POST /v1/admin/scrape` — `{status: "ok", stats: {inserted, skipped, errors}}` |
 | `AdminUserList` | `GET /v1/admin/users` — `{users: [{id, name, email, role, is_active, created_at}]}` |
 
 ## Interactive Docs

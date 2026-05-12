@@ -6,6 +6,8 @@ import { cn } from "@/lib/utils"
 import {
     LayoutDashboard,
     FileText,
+    Files,
+    BarChart3,
     Users,
     Settings,
     LogOut,
@@ -41,6 +43,16 @@ export function AdminSidebar() {
                 title: "Knowledge Base",
                 href: `/${locale}/admin/knowledge-base`,
                 icon: FileText,
+            },
+            {
+                title: "Documents",
+                href: `/${locale}/admin/documents`,
+                icon: Files,
+            },
+            {
+                title: "Analytics",
+                href: `/${locale}/admin/analytics`,
+                icon: BarChart3,
             },
         ]
 

@@ -1,9 +1,14 @@
 import hashlib
 import hmac
+import logging
 import os
 import uuid
 from typing import List
 
+from ai_engine.hybrid_retrieval import load_chunks_by_ids, retrieve_fused_chunk_ids
+from ai_engine.query_nlu import detect_query_language
+from ai_engine.rag_answer import answer_from_chunks
+from ai_engine.safety import should_refuse_query
 from database import get_session
 from database.models.session import (
     Channel,
@@ -13,7 +18,7 @@ from database.models.session import (
     Message,
     MessageRole,
 )
-from fastapi import APIRouter, Depends, Header, HTTPException, status
+from fastapi import APIRouter, Depends, Header, HTTPException, Response, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -27,6 +32,8 @@ from apps.api.schemas import (
 )
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
+
 SESSION_TOKEN_SECRET = os.environ.get("SESSION_TOKEN_SECRET", "")
 if not SESSION_TOKEN_SECRET:
     raise RuntimeError(
@@ -87,6 +94,22 @@ async def _get_or_create_session(
     return chat_session
 
 
+def _citation_from_storage(d: object) -> Citation | None:
+    if not isinstance(d, dict):
+        return None
+    try:
+        return Citation(
+            source=str(d.get("source", "source"))[:512],
+            page=int(d.get("page", 1)),
+            text=str(d.get("text", ""))[:4000],
+            document_title=d.get("document_title"),
+            proclamation_number=d.get("proclamation_number"),
+            article_number=d.get("article_number"),
+        )
+    except Exception:
+        return None
+
+
 @router.post("/send", response_model=ChatResponse)
 async def send_message(
     request: ChatRequest,
@@ -101,7 +124,6 @@ async def send_message(
         db,
     )
 
-    # Persist the user message
     user_msg = Message(
         session_id=chat_session.id,
         role=MessageRole.USER,
@@ -110,23 +132,54 @@ async def send_message(
     db.add(user_msg)
     await db.flush()
 
-    # TODO: replace with real ai-engine RAG call once ai-engine is wired up
-    # from ai_engine import rag_pipeline
-    # rag_result = await rag_pipeline.answer(request.message, language=request.language)
-    response_text = (
-        "This is a placeholder response. Connect the ai-engine RAG pipeline here."
-    )
-    citations: list[Citation] = []
-    confidence_score = 0.0
+    refuse, refusal_msg = should_refuse_query(request.message)
+    if refuse and refusal_msg:
+        logger.info(
+            "chat_refused session_id=%s reason=safety",
+            chat_session.id,
+        )
+        assistant_msg = Message(
+            session_id=chat_session.id,
+            role=MessageRole.ASSISTANT,
+            content=refusal_msg,
+            cited_chunks=[],
+            confidence_score=0.0,
+        )
+        db.add(assistant_msg)
+        return ChatResponse(
+            response_text=refusal_msg,
+            citations=[],
+            confidence_score=0.0,
+            session_token=_build_guest_session_token(chat_session.id),
+            detected_language=detect_query_language(request.message),
+        )
 
-    # Persist the assistant message
+    lang = detect_query_language(request.message)
+    logger.info(
+        "chat_query_lang=%s session_id=%s",
+        lang,
+        chat_session.id,
+    )
+
+    fused_ids = await retrieve_fused_chunk_ids(
+        db,
+        request.message,
+        taxpayer_category=request.taxpayer_category,
+    )
+    chunks = await load_chunks_by_ids(db, fused_ids)
+
+    response_text, citation_dicts, confidence_score = await answer_from_chunks(
+        request.message,
+        chunks,
+        language=request.language or "en",
+    )
+    citations = [Citation(**c) for c in citation_dicts]
+
     assistant_msg = Message(
         session_id=chat_session.id,
         role=MessageRole.ASSISTANT,
         content=response_text,
-        cited_chunks=[
-            {"source": c.source, "page": c.page, "text": c.text} for c in citations
-        ],
+        cited_chunks=[c.model_dump() for c in citations],
         confidence_score=confidence_score,
     )
     db.add(assistant_msg)
@@ -136,6 +189,7 @@ async def send_message(
         citations=citations,
         confidence_score=confidence_score,
         session_token=_build_guest_session_token(chat_session.id),
+        detected_language=lang,
     )
 
 
@@ -171,14 +225,63 @@ async def get_history(
     )
     messages = result.scalars().all()
 
-    return [
-        ChatMessage(
-            role=str(getattr(msg.role, "value", msg.role)),
-            content=msg.content,
-            timestamp=msg.created_at.isoformat(),
+    out: list[ChatMessage] = []
+    for msg in messages:
+        cites: list[Citation] | None = None
+        if msg.role == MessageRole.ASSISTANT and msg.cited_chunks:
+            parsed = [_citation_from_storage(x) for x in msg.cited_chunks]
+            cites = [c for c in parsed if c is not None]
+            if not cites:
+                cites = None
+        out.append(
+            ChatMessage(
+                role=str(getattr(msg.role, "value", msg.role)),
+                content=msg.content,
+                timestamp=msg.created_at.isoformat(),
+                citations=cites,
+            )
         )
-        for msg in messages
-    ]
+    return out
+
+
+@router.get("/export/{session_id}")
+async def export_session_transcript(
+    session_id: str,
+    session_token: str | None = Header(None, alias="X-Session-Token"),
+    db: AsyncSession = Depends(get_session),
+    _rl: None = Depends(require_rate_limit),
+):
+    """Plain-text export of the conversation (AWA-35 partial — transcript only)."""
+    try:
+        sid = uuid.UUID(session_id)
+    except ValueError:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="session_id must be a valid UUID",
+        )
+
+    session_result = await db.execute(select(ChatSession).where(ChatSession.id == sid))
+    chat_session = session_result.scalar_one_or_none()
+    if chat_session is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Session not found")
+    if chat_session.user_id is None:
+        _validate_guest_session_token(chat_session, session_token)
+
+    result = await db.execute(
+        select(Message)
+        .where(Message.session_id == chat_session.id)
+        .order_by(Message.created_at)
+    )
+    messages = result.scalars().all()
+    lines: list[str] = []
+    for msg in messages:
+        role = str(getattr(msg.role, "value", msg.role))
+        ts = msg.created_at.isoformat()
+        lines.append(f"[{ts}] {role.upper()}")
+        lines.append(msg.content)
+        lines.append("")
+    body = "\n".join(lines).strip() + "\n"
+    return Response(content=body, media_type="text/plain; charset=utf-8")
 
 
 @router.post("/feedback/{message_id}")

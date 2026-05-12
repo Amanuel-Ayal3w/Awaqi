@@ -16,6 +16,8 @@ type DocumentRow = {
     status: string
     source_url?: string | null
     created_at: string
+    processing_stage?: string | null
+    ingest_error?: string | null
 }
 
 const columns: ColumnDef<DocumentRow>[] = [
@@ -64,16 +66,27 @@ const columns: ColumnDef<DocumentRow>[] = [
         header: "Status",
         cell: ({ row }) => {
             const status = (row.getValue("status") as string).toLowerCase()
+            const stage = row.original.processing_stage
             return (
-                <div
-                    className={cn(
-                        "inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-semibold",
-                        status === "indexed" && "bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400",
-                        status === "pending" && "bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-400",
-                        status === "failed" && "bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400",
-                    )}
-                >
-                    {status.toUpperCase()}
+                <div className="flex flex-col gap-0.5">
+                    <div
+                        className={cn(
+                            "inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-semibold w-fit",
+                            status === "indexed" &&
+                                "bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400",
+                            (status === "pending" || status === "processing") &&
+                                "bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-400",
+                            status === "failed" &&
+                                "bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400",
+                            status === "requires_manual_review" &&
+                                "bg-amber-100 text-amber-900 dark:bg-amber-900/30 dark:text-amber-200",
+                        )}
+                    >
+                        {status.replace(/_/g, " ").toUpperCase()}
+                    </div>
+                    {stage ? (
+                        <span className="text-[10px] text-muted-foreground">{stage}</span>
+                    ) : null}
                 </div>
             )
         },
@@ -90,11 +103,31 @@ const columns: ColumnDef<DocumentRow>[] = [
     },
 ]
 
+function parseDuplicateConflict(detail: unknown): string | null {
+    if (
+        detail !== null &&
+        typeof detail === "object" &&
+        !Array.isArray(detail) &&
+        "code" in detail &&
+        (detail as { code?: string }).code === "duplicate" &&
+        "duplicate_of" in detail &&
+        typeof (detail as { duplicate_of?: unknown }).duplicate_of === "string"
+    ) {
+        return (detail as { duplicate_of: string }).duplicate_of
+    }
+    return null
+}
+
 export default function KnowledgeBasePage() {
     const [uploadCount, setUploadCount] = useState(0)
     const [uploadError, setUploadError] = useState<string | null>(null)
+    /** Same file hash as an existing document — user can overwrite via API. */
+    const [duplicatePending, setDuplicatePending] = useState<{ file: File; duplicateOfId: string } | null>(
+        null,
+    )
     const [documents, setDocuments] = useState<DocumentRow[]>([])
     const [isRefreshing, setIsRefreshing] = useState(false)
+    const [scrapeBusy, setScrapeBusy] = useState(false)
 
     const isUploading = uploadCount > 0
 
@@ -104,13 +137,14 @@ export default function KnowledgeBasePage() {
         status: doc.status,
         source_url: doc.source_url ?? null,
         created_at: doc.created_at,
+        processing_stage: doc.processing_stage ?? null,
+        ingest_error: doc.ingest_error ?? null,
     })
 
     const refreshDocuments = useCallback(async () => {
         setIsRefreshing(true)
-        setUploadError(null)
         try {
-            const result = await adminApi.listDocuments(200)
+            const result = await adminApi.listDocuments({ limit: 200 })
             setDocuments(result.documents.map(mapDocument))
         } catch (err: unknown) {
             const message = err instanceof Error ? err.message : "Failed to load documents"
@@ -124,11 +158,26 @@ export default function KnowledgeBasePage() {
         void refreshDocuments()
     }, [refreshDocuments])
 
-    const handleUpload = async (file: File) => {
+    useEffect(() => {
+        const busy = documents.some(
+            (d) =>
+                d.status === "processing" ||
+                d.status === "pending" ||
+                !!d.processing_stage
+        )
+        if (!busy) return
+        const t = setInterval(() => {
+            void refreshDocuments()
+        }, 2000)
+        return () => clearInterval(t)
+    }, [documents, refreshDocuments])
+
+    const handleUpload = async (file: File, overwrite = false) => {
         setUploadCount((n) => n + 1)
         setUploadError(null)
+        setDuplicatePending(null)
         try {
-            const result: DocumentStatus = await adminApi.uploadDocument(file)
+            const result: DocumentStatus = await adminApi.uploadDocument(file, { overwrite })
             setDocuments((prev) => [
                 {
                     id: result.doc_id,
@@ -136,21 +185,60 @@ export default function KnowledgeBasePage() {
                     status: result.status,
                     source_url: null,
                     created_at: new Date().toISOString(),
+                    processing_stage: result.processing_stage ?? null,
+                    ingest_error: result.ingest_error ?? null,
                 },
                 ...prev,
             ])
             await refreshDocuments()
         } catch (err: unknown) {
-            const message = err instanceof Error ? err.message : "Upload failed"
-            setUploadError(message)
+            if (
+                typeof err === "object" &&
+                err !== null &&
+                "response" in err &&
+                (err as { response?: { status?: number; data?: { detail?: unknown } } })
+                    .response?.status === 409
+            ) {
+                const detail = (err as { response?: { data?: { detail?: unknown } } }).response
+                    ?.data?.detail
+                const dupId = parseDuplicateConflict(detail)
+                if (dupId) {
+                    setDuplicatePending({ file, duplicateOfId: dupId })
+                } else {
+                    const msg =
+                        typeof detail === "string"
+                            ? detail
+                            : detail != null
+                              ? JSON.stringify(detail)
+                              : "Duplicate document"
+                    setUploadError(`${msg}. Use overwrite if you meant to replace the existing file.`)
+                }
+            } else {
+                const message = err instanceof Error ? err.message : "Upload failed"
+                setUploadError(message)
+            }
         } finally {
             setUploadCount((n) => n - 1)
         }
     }
 
+    const handleScrape = async () => {
+        setScrapeBusy(true)
+        setUploadError(null)
+        try {
+            await adminApi.triggerScrape()
+            await refreshDocuments()
+        } catch (err: unknown) {
+            const message = err instanceof Error ? err.message : "Scrape failed"
+            setUploadError(message)
+        } finally {
+            setScrapeBusy(false)
+        }
+    }
+
     const { getRootProps, getInputProps, isDragActive } = useDropzone({
         onDrop: (acceptedFiles) => {
-            acceptedFiles.forEach(handleUpload)
+            acceptedFiles.forEach((file) => void handleUpload(file))
         },
         accept: {
             "application/pdf": [".pdf"],
@@ -191,25 +279,74 @@ export default function KnowledgeBasePage() {
                     <p className="text-sm text-muted-foreground">
                         Drag and drop PDF, DOCX, or TXT files here, or click to select files.
                     </p>
-                    {uploadError && (
+                    {duplicatePending ? (
+                        <div className="mt-2 flex max-w-md flex-col items-center gap-3 rounded-md border border-amber-500/40 bg-amber-500/10 px-4 py-3 text-center">
+                            <p className="text-sm text-foreground">
+                                This file is identical to an existing document (
+                                <span className="font-mono text-xs">{duplicatePending.duplicateOfId}</span>
+                                ).
+                            </p>
+                            <div className="flex flex-wrap justify-center gap-2">
+                                <Button
+                                    size="sm"
+                                    type="button"
+                                    disabled={isUploading}
+                                    onClick={(e) => {
+                                        e.stopPropagation()
+                                        void handleUpload(duplicatePending.file, true)
+                                    }}
+                                >
+                                    Overwrite existing
+                                </Button>
+                                <Button
+                                    size="sm"
+                                    type="button"
+                                    variant="outline"
+                                    disabled={isUploading}
+                                    onClick={(e) => {
+                                        e.stopPropagation()
+                                        setDuplicatePending(null)
+                                    }}
+                                >
+                                    Cancel
+                                </Button>
+                            </div>
+                        </div>
+                    ) : uploadError ? (
                         <p className="text-sm text-destructive mt-1">{uploadError}</p>
-                    )}
+                    ) : null}
                 </div>
             </div>
 
             <div className="space-y-4">
                 <div className="flex items-center justify-between">
                     <h2 className="text-xl font-semibold">Uploaded Documents</h2>
-                    <Button
-                        variant="outline"
-                        size="sm"
-                        className="gap-2"
-                        onClick={() => void refreshDocuments()}
-                        disabled={isRefreshing}
-                    >
-                        <RefreshCw className={cn("h-4 w-4", isRefreshing && "animate-spin")} />
-                        Refresh
-                    </Button>
+                    <div className="flex gap-2">
+                        <Button
+                            variant="secondary"
+                            size="sm"
+                            className="gap-2"
+                            onClick={() => void handleScrape()}
+                            disabled={scrapeBusy}
+                        >
+                            {scrapeBusy ? (
+                                <Loader2 className="h-4 w-4 animate-spin" />
+                            ) : (
+                                <RefreshCw className="h-4 w-4" />
+                            )}
+                            Sync / Scrape
+                        </Button>
+                        <Button
+                            variant="outline"
+                            size="sm"
+                            className="gap-2"
+                            onClick={() => void refreshDocuments()}
+                            disabled={isRefreshing}
+                        >
+                            <RefreshCw className={cn("h-4 w-4", isRefreshing && "animate-spin")} />
+                            Refresh
+                        </Button>
+                    </div>
                 </div>
                 <DataTable columns={columns} data={documents} />
             </div>

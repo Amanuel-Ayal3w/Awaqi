@@ -22,7 +22,9 @@
         "uploadImage": "ምስል ይጫኑ",
         "uploadDocument": "ሰነድ ይጫኑ",
         "googleDrive": "ከ Google Drive",
-        "addAttachment": "ፋይል ያያይዙ"
+        "addAttachment": "ፋይል ያያይዙ",
+        "sources": "ምንጮች",
+        "exportTranscript": "ውይይት ወደ ፋይል ላክ"
     },
     "auth": {
         "welcomeBack": "እንኳን ደህና መጡ",

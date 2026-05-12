@@ -12,6 +12,7 @@ dependencies = [
     "redis",
     "python-dotenv",
     "utils",
+    "greenlet>=3.3.1",
 ]
 
 [tool.uv.sources]

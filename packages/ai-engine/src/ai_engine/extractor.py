@@ -22,9 +22,12 @@ _PAGES_PER_BATCH = 10
 
 @dataclass
 class PageText:
-    """Extracted text from a single PDF page."""
+    """Extracted text from a single PDF page (or whole HTML document as page 1)."""
+
     page_number: int  # 1-indexed
     text: str
+    extraction_mode: str = "gemini"  # gemini | pdf_text | ocr | html
+    ocr_mean_confidence: float | None = None  # 0..1 for OCR pages only
 
 
 def _split_pdf_pages(pdf_bytes: bytes) -> list[bytes]:

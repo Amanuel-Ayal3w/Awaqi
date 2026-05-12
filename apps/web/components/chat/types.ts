@@ -1,3 +1,5 @@
+import type { Citation } from '@/types/api';
+
 export interface Attachment {
     id: string;
     name: string;
@@ -10,4 +12,5 @@ export interface Message {
     role: 'user' | 'assistant';
     content: string;
     attachments?: Attachment[];
+    citations?: Citation[];
 }
