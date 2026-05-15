@@ -8,7 +8,7 @@ so the API's Redis rate limiter gives each user an independent bucket
 """
 
 import os
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Optional
 
 import httpx
@@ -70,6 +70,8 @@ async def send_message(
     if taxpayer_category:
         payload["taxpayer_category"] = taxpayer_category
 
+    headers["X-Telegram-Chat-Id"] = str(telegram_chat_id)
+
     async with httpx.AsyncClient(timeout=REQUEST_TIMEOUT) as client:
         resp = await client.post(
             f"{API_BASE_URL}/v1/chat/send",
@@ -108,4 +110,34 @@ async def send_message(
         confidence_score=data.get("confidence_score", 0.0),
         session_token=data.get("session_token"),
         detected_language=data.get("detected_language"),
+    )
+
+
+@dataclass
+class LinkResult:
+    token: str
+    link_url: str
+    expires_in_seconds: int
+
+
+async def request_link(telegram_chat_id: int) -> LinkResult:
+    """Ask the API to generate a one-time link token for this Telegram user."""
+    async with httpx.AsyncClient(timeout=REQUEST_TIMEOUT) as client:
+        resp = await client.post(
+            f"{API_BASE_URL}/v1/auth/telegram/link-request",
+            json={"chat_id": telegram_chat_id},
+        )
+
+    if not resp.is_success:
+        try:
+            detail = resp.json().get("detail", resp.text)
+        except Exception:
+            detail = resp.text
+        raise AwagiAPIError(resp.status_code, str(detail))
+
+    data = resp.json()
+    return LinkResult(
+        token=data["token"],
+        link_url=data["link_url"],
+        expires_in_seconds=data["expires_in_seconds"],
     )

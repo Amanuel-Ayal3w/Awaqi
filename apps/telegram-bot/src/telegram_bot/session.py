@@ -5,9 +5,13 @@ Each Telegram user gets:
   - A stable session_id (UUID) that maps to a ChatSession row in PostgreSQL
   - A session_token (HMAC) returned by the API, stored alongside the session_id
   - A preferred language ("en" or "am")
+  - A rolling history of the last HISTORY_MAX message pairs
 
 Keys in Redis:
-  tg:session:{chat_id}         → JSON { session_id, session_token, language }
+  tg:session:{chat_id}  → JSON {
+      session_id, session_token, language,
+      history: [{"user": str, "bot": str}, ...]   # oldest first, max HISTORY_MAX
+  }
 
 The TTL defaults to 24 hours and is reset on every interaction (sliding window),
 matching the guest zero-footprint model in the SRS.
@@ -22,6 +26,7 @@ import redis.asyncio as aioredis
 
 REDIS_URL = os.environ.get("REDIS_URL", "redis://localhost:6379/0")
 SESSION_TTL = int(os.environ.get("TELEGRAM_SESSION_TTL", "86400"))  # 24 h default
+HISTORY_MAX = 5  # number of user↔bot exchange pairs to keep
 
 _redis_pool: Optional[aioredis.Redis] = None
 
@@ -94,6 +99,34 @@ async def reset(chat_id: int) -> str:
     data = {"session_id": session_id, "session_token": None, "language": language}
     await redis.setex(_key(chat_id), SESSION_TTL, json.dumps(data))
     return session_id
+
+
+async def add_message(chat_id: int, user_text: str, bot_text: str) -> None:
+    """
+    Append a user↔bot exchange to the rolling history stored in the session.
+    Keeps only the last HISTORY_MAX pairs (oldest are dropped first).
+    """
+    redis = await _get_redis()
+    raw = await redis.get(_key(chat_id))
+    if not raw:
+        return
+    data = json.loads(raw)
+    history: list = data.get("history", [])
+    history.append({"user": user_text, "bot": bot_text})
+    data["history"] = history[-HISTORY_MAX:]
+    await redis.setex(_key(chat_id), SESSION_TTL, json.dumps(data))
+
+
+async def get_history(chat_id: int) -> list[dict]:
+    """
+    Return the stored message history for a chat_id.
+    Each entry is {"user": str, "bot": str}.  Returns [] if no history exists.
+    """
+    redis = await _get_redis()
+    raw = await redis.get(_key(chat_id))
+    if not raw:
+        return []
+    return json.loads(raw).get("history", [])
 
 
 async def close() -> None:
