@@ -66,6 +66,7 @@ async def _get_or_create_session(
     language: str,
     session_token: str | None,
     db: AsyncSession,
+    channel: Channel = Channel.WEB,
 ) -> ChatSession:
     """Find an existing ChatSession or create a new one for guest users."""
     try:
@@ -86,7 +87,7 @@ async def _get_or_create_session(
 
     chat_session = ChatSession(
         id=sid,
-        channel=Channel.WEB,
+        channel=channel,
         language=language,
     )
     db.add(chat_session)
@@ -114,14 +115,17 @@ def _citation_from_storage(d: object) -> Citation | None:
 async def send_message(
     request: ChatRequest,
     session_token: str | None = Header(None, alias="X-Session-Token"),
+    x_channel: str | None = Header(None, alias="X-Channel"),
     db: AsyncSession = Depends(get_session),
     _rl: None = Depends(require_rate_limit),
 ):
+    channel = Channel.TELEGRAM if x_channel == "telegram" else Channel.WEB
     chat_session = await _get_or_create_session(
         request.session_id,
         request.language or "en",
         session_token,
         db,
+        channel=channel,
     )
 
     user_msg = Message(

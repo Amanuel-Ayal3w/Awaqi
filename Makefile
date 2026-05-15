@@ -1,4 +1,4 @@
-.PHONY: help check build-web test test-unit test-integration lint-py dev test-db
+.PHONY: help check build-web test test-unit test-integration lint-py dev back front dev-bot test-db
 
 # --- Colors ---
 GREEN  := \033[0;32m
@@ -18,6 +18,9 @@ help:
 	@echo "  $(CYAN)make test-integration$(RESET)   Run only integration tests (needs PostgreSQL)"
 	@echo "  $(CYAN)make lint-py$(RESET)            Ruff lint check"
 	@echo "  $(CYAN)make dev$(RESET)                Start backend + frontend (local dev)"
+	@echo "  $(CYAN)make back$(RESET)               Start FastAPI backend only"
+	@echo "  $(CYAN)make front$(RESET)              Start Next.js frontend only"
+	@echo "  $(CYAN)make dev-bot$(RESET)            Start the Telegram bot (needs TELEGRAM_BOT_TOKEN in .env)"
 	@echo "  $(CYAN)make build-web$(RESET)          Lint, type-check, and build Next.js"
 	@echo "$(LINE)"
 	@echo ""
@@ -37,6 +40,39 @@ dev:
 		uv run --package api uvicorn apps.api.main:app --reload --host 0.0.0.0 --port 8000 & \
 		cd apps/web && npm run dev & \
 		wait
+
+# --- Backend only -----------------------------------------------------------
+back:
+	@echo ""
+	@echo "$(LINE)"
+	@echo "$(BOLD)  STARTING BACKEND$(RESET)"
+	@echo "$(LINE)"
+	@echo "  $(CYAN)API$(RESET)  http://localhost:8000"
+	@echo "$(LINE)"
+	@set -a && [ -f .env ] && . ./.env; set +a; \
+		uv sync --package api && \
+		uv run --package api uvicorn apps.api.main:app --reload --host 0.0.0.0 --port 8000
+
+# --- Frontend only ----------------------------------------------------------
+front:
+	@echo ""
+	@echo "$(LINE)"
+	@echo "$(BOLD)  STARTING FRONTEND$(RESET)"
+	@echo "$(LINE)"
+	@echo "  $(CYAN)Web$(RESET)  http://localhost:3000"
+	@echo "$(LINE)"
+	@set -a && [ -f .env ] && . ./.env; set +a; \
+		cd apps/web && npm run dev
+
+# --- Telegram bot -----------------------------------------------------------
+dev-bot:
+	@echo ""
+	@echo "$(LINE)"
+	@echo "$(BOLD)  STARTING TELEGRAM BOT$(RESET)"
+	@echo "$(LINE)"
+	@set -a && [ -f .env ] && . ./.env; set +a; \
+		uv sync --package telegram-bot && \
+		uv run --package telegram-bot telegram-bot
 
 # --- Run everything ---------------------------------------------------------
 check: lint-py test build-web
