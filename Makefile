@@ -31,13 +31,15 @@ dev:
 	@echo "$(LINE)"
 	@echo "$(BOLD)  STARTING DEV SERVERS$(RESET)"
 	@echo "$(LINE)"
-	@echo "  $(CYAN)Backend$(RESET)   http://localhost:8000"
-	@echo "  $(CYAN)Frontend$(RESET)  http://localhost:3000"
+	@echo "  $(CYAN)Backend$(RESET)     http://localhost:8000"
+	@echo "  $(CYAN)Frontend$(RESET)   http://localhost:3000"
+	@echo "  $(CYAN)Telegram bot$(RESET)  @ERATaxBot"
 	@echo "$(LINE)"
 	@set -a && [ -f .env ] && . ./.env; set +a; \
 		trap 'kill 0' INT TERM; \
 		uv sync --package api; \
 		uv run --package api uvicorn apps.api.main:app --reload --host 0.0.0.0 --port 8000 & \
+		uv sync --package telegram-bot && uv run --package telegram-bot telegram-bot & \
 		cd apps/web && npm run dev & \
 		wait
 
