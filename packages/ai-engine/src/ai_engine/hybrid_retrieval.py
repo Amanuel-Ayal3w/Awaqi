@@ -1,5 +1,5 @@
 """
-Hybrid retrieval: dense (pgvector) + sparse (Postgres FTS) fused with RRF (SDS §4.6.4).
+Hybrid retrieval: dense (pgvector) + sparse (BM25) fused with RRF (SDS §4.6.4).
 """
 
 from __future__ import annotations
@@ -9,7 +9,7 @@ import logging
 import uuid
 from collections.abc import Sequence
 
-from database import fts_search_chunk_ids, vector_search_chunk_ids
+from database import bm25_search_chunk_ids, vector_search_chunk_ids
 from database.models.document import DocumentChunk
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -43,7 +43,8 @@ async def retrieve_fused_chunk_ids(
     *,
     taxpayer_category: str | None,
     vector_limit: int = 20,
-    fts_limit: int = 20,
+    bm25_limit: int = 20,
+    bm25_candidate_pool: int = 200,
     fused_top: int = 10,
 ) -> list[uuid.UUID]:
     q_for_vec = build_e5_query_text(user_query, taxpayer_category=taxpayer_category)
@@ -52,15 +53,20 @@ async def retrieve_fused_chunk_ids(
         return embed_query_sync(q_for_vec)
 
     vec_task = asyncio.to_thread(_embed)
-    fts_task = fts_search_chunk_ids(db, user_query, limit=fts_limit)
-    embedding, fts_ids = await asyncio.gather(vec_task, fts_task)
+    bm25_task = bm25_search_chunk_ids(
+        db,
+        user_query,
+        limit=bm25_limit,
+        candidate_pool=max(bm25_limit, bm25_candidate_pool),
+    )
+    embedding, bm25_ids = await asyncio.gather(vec_task, bm25_task)
 
     vec_ids = await vector_search_chunk_ids(db, embedding, limit=vector_limit)
-    fused = reciprocal_rank_fusion([vec_ids, fts_ids], top_n=fused_top)
+    fused = reciprocal_rank_fusion([vec_ids, bm25_ids], top_n=fused_top)
     logger.debug(
-        "hybrid_retrieval vec=%d fts=%d fused=%d",
+        "hybrid_retrieval vec=%d bm25=%d fused=%d",
         len(vec_ids),
-        len(fts_ids),
+        len(bm25_ids),
         len(fused),
     )
     return fused
