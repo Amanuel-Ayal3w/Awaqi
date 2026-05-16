@@ -5,21 +5,44 @@ Unit tests: no DB needed, always fast.
 Integration tests: need PostgreSQL, auto-skip when unavailable.
 """
 
+import asyncio
 import os
 import uuid
 from collections.abc import AsyncGenerator
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 from unittest.mock import AsyncMock
+from urllib.parse import urlparse
 
 import pytest
+from alembic import command
+from alembic.config import Config
 from dotenv import load_dotenv
 
 load_dotenv()
 
-TEST_DATABASE_URL = "postgresql+asyncpg://postgres:postgres@localhost:5432/awaqi_db_test"
-os.environ["DATABASE_URL"] = TEST_DATABASE_URL
+TEST_DB_NAME = "awaqi_db_test"
+DEFAULT_TEST_DATABASE_URL = (
+    f"postgresql+asyncpg://postgres:postgres@localhost:5432/{TEST_DB_NAME}"
+)
+os.environ["DATABASE_URL"] = os.getenv(
+    "TEST_DATABASE_URL",
+    DEFAULT_TEST_DATABASE_URL,
+)
 os.environ.setdefault("REDIS_URL", "redis://localhost:6379/0")
 os.environ.setdefault("SESSION_TOKEN_SECRET", "test-secret")
+
+
+def _assert_safe_test_database_url() -> None:
+    raw = os.environ.get("DATABASE_URL", "")
+    parsed = urlparse(raw.replace("postgresql+asyncpg://", "postgresql://", 1))
+    db_name = (parsed.path or "/").lstrip("/").lower()
+    if db_name != TEST_DB_NAME:
+        raise RuntimeError(
+            f"Refusing to run DB tests against '{db_name or '<missing>'}'. "
+            f"Expected database name: '{TEST_DB_NAME}'. "
+            "Set TEST_DATABASE_URL accordingly."
+        )
 
 
 def _db_is_available() -> bool:
@@ -51,6 +74,55 @@ if _HAS_DB:
     _TABLES_CREATED = False
     _engine = None
     _SessionLocal = None
+    _REPO_ROOT = Path(__file__).resolve().parents[1]
+
+    def _upgrade_test_db_to_head() -> None:
+        """Ensure DB schema matches current models before integration tests run."""
+        cfg = Config(str(_REPO_ROOT / "packages/database/alembic.ini"))
+        cfg.set_main_option(
+            "script_location",
+            str(_REPO_ROOT / "packages/database/migrations"),
+        )
+        command.upgrade(cfg, "head")
+
+    async def _ensure_migration_baseline(engine) -> None:
+        """
+        If alembic_version is missing but schema artifacts exist, reset public schema.
+        This avoids duplicate-type errors when upgrading a previously hand-created DB.
+        """
+        async with engine.begin() as conn:
+            has_version = await conn.execute(
+                text(
+                    """
+                    SELECT EXISTS (
+                        SELECT 1
+                        FROM information_schema.tables
+                        WHERE table_schema = 'public'
+                          AND table_name = 'alembic_version'
+                    )
+                    """
+                )
+            )
+            if has_version.scalar():
+                return
+
+            has_artifacts = await conn.execute(
+                text(
+                    """
+                    SELECT EXISTS (
+                        SELECT 1 FROM information_schema.tables
+                        WHERE table_schema = 'public'
+                    ) OR EXISTS (
+                        SELECT 1 FROM pg_type t
+                        JOIN pg_namespace n ON n.oid = t.typnamespace
+                        WHERE n.nspname = 'public'
+                    )
+                    """
+                )
+            )
+            if has_artifacts.scalar():
+                await conn.execute(text("DROP SCHEMA public CASCADE"))
+                await conn.execute(text("CREATE SCHEMA public"))
 
     def _get_engine():
         global _engine, _SessionLocal
@@ -76,14 +148,17 @@ if _HAS_DB:
             yield
             return
 
+        _assert_safe_test_database_url()
+
         global _TABLES_CREATED
         engine, _ = _get_engine()
 
         if not _TABLES_CREATED:
+            await _ensure_migration_baseline(engine)
+            await asyncio.to_thread(_upgrade_test_db_to_head)
             async with engine.begin() as conn:
                 await conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector"))
                 await conn.execute(text("CREATE EXTENSION IF NOT EXISTS pg_trgm"))
-                await conn.run_sync(Base.metadata.create_all)
             _TABLES_CREATED = True
 
         yield

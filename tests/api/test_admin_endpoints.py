@@ -106,18 +106,24 @@ class TestAdminUpload:
         response = await client.post("/v1/admin/upload")
         assert response.status_code == 401
 
-    async def test_editor_cannot_upload(self, client, editor_session):
+    async def test_editor_can_upload_text_document(self, client, editor_session):
         response = await client.post(
             "/v1/admin/upload",
             headers={"Authorization": f"Bearer {editor_session.token}"},
-            files={"file": ("test.pdf", b"%PDF-1.4 fake", "application/pdf")},
+            files={"file": ("test.txt", b"hello world", "text/plain")},
         )
-        assert response.status_code == 403
+        assert response.status_code == 200
+        body = response.json()
+        assert "doc_id" in body
+        assert "status" in body
 
-    async def test_non_pdf_rejected(self, client, admin_session):
+    async def test_non_pdf_text_is_allowed(self, client, admin_session):
         response = await client.post(
             "/v1/admin/upload",
             headers={"Authorization": f"Bearer {admin_session.token}"},
             files={"file": ("test.txt", b"hello", "text/plain")},
         )
-        assert response.status_code == 415
+        assert response.status_code == 200
+        body = response.json()
+        assert "doc_id" in body
+        assert "status" in body

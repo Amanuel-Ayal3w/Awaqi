@@ -5,6 +5,7 @@ import type {
     AdminAnalytics,
     AdminDocumentDetail,
     AdminDocumentList,
+    AdminScrapeResult,
     AdminSystemHealth,
     AdminUserItem,
     AdminUserList,
@@ -133,8 +134,8 @@ export const adminApi = {
         return data;
     },
 
-    triggerScrape: async (): Promise<{ status: string; stats: Record<string, number> }> => {
-        const { data } = await apiClient.post("/v1/admin/scrape");
+    triggerScrape: async (): Promise<AdminScrapeResult> => {
+        const { data } = await apiClient.post<AdminScrapeResult>("/v1/admin/scrape");
         return data;
     },
 
