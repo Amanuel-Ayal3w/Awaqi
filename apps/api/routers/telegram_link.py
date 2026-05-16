@@ -42,12 +42,28 @@ _WEB_BASE_URL = os.environ.get("NEXT_PUBLIC_APP_URL", "http://localhost:3000")
 _BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "")
 
 
+def _escape_md(text: str) -> str:
+    """Escape special characters for Telegram MarkdownV2."""
+    for ch in r"\_*[]()~`>#+-=|{}.!":
+        text = text.replace(ch, f"\\{ch}")
+    return text
+
+
 async def _notify_telegram(chat_id: int, display_name: str) -> None:
-    """Send a confirmation message to the Telegram user after linking."""
+    """Send a welcome confirmation message to the Telegram user after linking."""
     if not _BOT_TOKEN:
         return
-    name = display_name.replace(".", "\\.").replace("-", "\\-").replace("_", "\\_").replace("!", "\\!")
-    text = f" Linked\\! You are now signed in as *{name}*\\.\n\nYour Telegram conversations will sync with your Awaqi web account\\."
+    name = _escape_md(display_name)
+    text = (
+        f" *Welcome, {name}\\!*\n\n"
+        "You are now signed in to *Awaqi* — the Ethiopian Revenue Authority tax information assistant\\.\n\n"
+        "I can help you with:\n"
+        "• Ethiopian tax laws and regulations\n"
+        "• VAT, income tax, and customs questions\n"
+        "• Ministry of Revenue procedures\n\n"
+        "Your conversation history now syncs between Telegram and the Awaqi web app\\.\n\n"
+        "_Just type your tax question in English or Amharic to get started\\._"
+    )
     try:
         async with httpx.AsyncClient(timeout=5) as client:
             await client.post(

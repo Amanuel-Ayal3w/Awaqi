@@ -22,6 +22,7 @@ export default function LinkTelegramPage() {
     const token = searchParams.get("token");
 
     const [state, setState] = useState<PageState>({ status: "loading" });
+    const [countdown, setCountdown] = useState(3);
 
     useEffect(() => {
         if (!token) {
@@ -62,6 +63,16 @@ export default function LinkTelegramPage() {
             setState({ status: "error", message });
         }
     };
+
+    useEffect(() => {
+        if (state.status !== "success") return;
+        if (countdown <= 0) {
+            window.location.href = "https://t.me/ERATaxBot";
+            return;
+        }
+        const t = setTimeout(() => setCountdown((c) => c - 1), 1000);
+        return () => clearTimeout(t);
+    }, [state.status, countdown]);
 
     const loginUrl = `./chat/login?redirect=/link-telegram?token=${token}`;
 
@@ -143,12 +154,15 @@ export default function LinkTelegramPage() {
                             <p className="text-sm text-muted-foreground mt-1">
                                 A confirmation has been sent to your Telegram chat.
                             </p>
+                            <p className="text-sm text-muted-foreground mt-3">
+                                Redirecting to Telegram in <span className="font-medium text-foreground">{countdown}</span>s…
+                            </p>
                         </div>
                         <a
                             href="https://t.me/ERATaxBot"
                             className="block w-full text-center rounded-lg bg-primary text-primary-foreground py-2.5 text-sm font-medium hover:bg-primary/90 transition-colors"
                         >
-                            Return to Telegram
+                            Open Telegram now
                         </a>
                         <Link
                             href="./chat"

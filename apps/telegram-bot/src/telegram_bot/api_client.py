@@ -122,7 +122,7 @@ class LinkResult:
 
 async def request_link(telegram_chat_id: int) -> LinkResult:
     """Ask the API to generate a one-time link token for this Telegram user."""
-    async with httpx.AsyncClient(timeout=REQUEST_TIMEOUT) as client:
+    async with httpx.AsyncClient(timeout=30.0) as client:
         resp = await client.post(
             f"{API_BASE_URL}/v1/auth/telegram/link-request",
             json={"chat_id": telegram_chat_id},
