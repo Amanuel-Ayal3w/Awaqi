@@ -47,7 +47,7 @@ redis_client: aioredis.Redis = aioredis.Redis(connection_pool=_pool)
 # TTL constants
 # ---------------------------------------------------------------------------
 RATE_LIMIT_WINDOW: int = 60 * 10   # 10-minute rolling window
-RATE_LIMIT_MAX: int = 100           # max requests per window per IP
+RATE_LIMIT_MAX: int = 15            # max requests per window per IP
 
 GUEST_SESSION_TTL: int = 60 * 30   # 30-minute inactivity window
 
