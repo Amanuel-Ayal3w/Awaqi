@@ -86,6 +86,11 @@ export interface AdminDocumentList {
     documents: AdminDocumentItem[];
 }
 
+export interface AdminScrapeResult {
+    status: string;
+    stats: Record<string, number>;
+}
+
 export interface DocumentStatusCount {
     status: string;
     count: number;

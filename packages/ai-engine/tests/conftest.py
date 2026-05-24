@@ -7,5 +7,5 @@ import os
 # Lazy-connect packages only need a syntactically valid URL at import time for some paths.
 os.environ.setdefault(
     "DATABASE_URL",
-    "postgresql+asyncpg://user:password@localhost:5432/awaqi_db",
+    "postgresql+asyncpg://user:password@localhost:5432/awaqi_db_test",
 )

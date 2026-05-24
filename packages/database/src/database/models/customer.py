@@ -10,7 +10,7 @@ name= parameters handle the Python snake_case ↔ DB camelCase translation.
 import uuid
 from datetime import datetime
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, String, Text
+from sqlalchemy import BigInteger, Boolean, DateTime, ForeignKey, String, Text
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -36,6 +36,10 @@ class CuUser(Base):
         Boolean, nullable=False, default=False, name="emailVerified"
     )
     image: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # Set when the user links their Telegram account via /link command
+    telegram_chat_id: Mapped[int | None] = mapped_column(
+        BigInteger, nullable=True, unique=True, index=True
+    )
 
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, name="createdAt"

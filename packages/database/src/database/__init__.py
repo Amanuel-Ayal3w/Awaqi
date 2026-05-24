@@ -7,7 +7,7 @@ Import from here in other packages:
 """
 
 from database.db import AsyncSessionLocal, engine, get_session, init_db
-from database.fts import fts_search_chunk_ids
+from database.fts import bm25_search_chunk_ids, fts_search_chunk_ids
 from database.models import (
     BaSession,
     BaUser,
@@ -31,6 +31,7 @@ __all__ = [
     "get_redis",
     "ping_redis",
     "fts_search_chunk_ids",
+    "bm25_search_chunk_ids",
     "vector_search_chunk_ids",
     # ORM models
     "BaUser",

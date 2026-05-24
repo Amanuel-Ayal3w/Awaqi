@@ -6,6 +6,7 @@ import { cn } from "@/lib/utils"
 import {
     LayoutDashboard,
     FileText,
+    Globe,
     Files,
     BarChart3,
     Users,
@@ -43,6 +44,11 @@ export function AdminSidebar() {
                 title: "Knowledge Base",
                 href: `/${locale}/admin/knowledge-base`,
                 icon: FileText,
+            },
+            {
+                title: "Scraper",
+                href: `/${locale}/admin/scraper`,
+                icon: Globe,
             },
             {
                 title: "Documents",

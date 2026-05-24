@@ -10,6 +10,7 @@ from ai_engine.query_nlu import detect_query_language
 from ai_engine.rag_answer import answer_from_chunks
 from ai_engine.safety import should_refuse_query
 from database import get_session
+from database.models.customer import CuUser
 from database.models.session import (
     Channel,
     ChatSession,
@@ -61,11 +62,24 @@ def _validate_guest_session_token(
         )
 
 
+async def _resolve_telegram_customer(
+    telegram_chat_id: int, db: AsyncSession
+) -> uuid.UUID | None:
+    """Look up a cu_user_id for a linked Telegram chat_id, or None if not linked."""
+    result = await db.execute(
+        select(CuUser.id).where(CuUser.telegram_chat_id == telegram_chat_id)
+    )
+    row = result.scalar_one_or_none()
+    return row
+
+
 async def _get_or_create_session(
     session_id: str,
     language: str,
     session_token: str | None,
     db: AsyncSession,
+    channel: Channel = Channel.WEB,
+    cu_user_id: uuid.UUID | None = None,
 ) -> ChatSession:
     """Find an existing ChatSession or create a new one for guest users."""
     try:
@@ -80,14 +94,19 @@ async def _get_or_create_session(
     chat_session = result.scalar_one_or_none()
 
     if chat_session is not None:
-        if chat_session.user_id is None:
+        # Backfill cu_user_id on existing session if the user just linked their account
+        if cu_user_id is not None and chat_session.cu_user_id is None:
+            chat_session.cu_user_id = cu_user_id
+            db.add(chat_session)
+        elif chat_session.user_id is None and chat_session.cu_user_id is None:
             _validate_guest_session_token(chat_session, session_token)
         return chat_session
 
     chat_session = ChatSession(
         id=sid,
-        channel=Channel.WEB,
+        channel=channel,
         language=language,
+        cu_user_id=cu_user_id,
     )
     db.add(chat_session)
     await db.flush()
@@ -114,14 +133,27 @@ def _citation_from_storage(d: object) -> Citation | None:
 async def send_message(
     request: ChatRequest,
     session_token: str | None = Header(None, alias="X-Session-Token"),
+    x_channel: str | None = Header(None, alias="X-Channel"),
+    x_telegram_chat_id: str | None = Header(None, alias="X-Telegram-Chat-Id"),
     db: AsyncSession = Depends(get_session),
     _rl: None = Depends(require_rate_limit),
 ):
+    channel = Channel.TELEGRAM if x_channel == "telegram" else Channel.WEB
+
+    cu_user_id: uuid.UUID | None = None
+    if x_telegram_chat_id:
+        try:
+            cu_user_id = await _resolve_telegram_customer(int(x_telegram_chat_id), db)
+        except (ValueError, TypeError):
+            pass
+
     chat_session = await _get_or_create_session(
         request.session_id,
         request.language or "en",
         session_token,
         db,
+        channel=channel,
+        cu_user_id=cu_user_id,
     )
 
     user_msg = Message(
@@ -161,18 +193,27 @@ async def send_message(
         chat_session.id,
     )
 
-    fused_ids = await retrieve_fused_chunk_ids(
-        db,
-        request.message,
-        taxpayer_category=request.taxpayer_category,
-    )
-    chunks = await load_chunks_by_ids(db, fused_ids)
-
-    response_text, citation_dicts, confidence_score = await answer_from_chunks(
-        request.message,
-        chunks,
-        language=request.language or "en",
-    )
+    try:
+        fused_ids = await retrieve_fused_chunk_ids(
+            db,
+            request.message,
+            taxpayer_category=request.taxpayer_category,
+        )
+        chunks = await load_chunks_by_ids(db, fused_ids)
+        response_text, citation_dicts, confidence_score = await answer_from_chunks(
+            request.message,
+            chunks,
+            language=request.language or "en",
+        )
+    except Exception:
+        logger.exception("rag_pipeline_error session_id=%s", chat_session.id)
+        response_text = (
+            "The knowledge base search is temporarily unavailable "
+            "(the embedding model may still be loading on first start). "
+            "Please try again in a moment."
+        )
+        citation_dicts = []
+        confidence_score = 0.0
     citations = [Citation(**c) for c in citation_dicts]
 
     assistant_msg = Message(

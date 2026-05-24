@@ -7,7 +7,7 @@ from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from apps.api.routers import admin, chat
+from apps.api.routers import admin, chat, telegram_link
 
 logger = logging.getLogger(__name__)
 
@@ -67,6 +67,7 @@ app.add_middleware(
 
 app.include_router(chat.router, prefix="/v1/chat", tags=["chat"])
 app.include_router(admin.router, prefix="/v1", tags=["admin"])
+app.include_router(telegram_link.router, prefix="/v1/auth/telegram", tags=["telegram"])
 
 
 @app.get("/health")

@@ -18,5 +18,5 @@ class TestRateLimitConstants:
     def test_window_is_10_minutes(self):
         assert RATE_LIMIT_WINDOW == 600
 
-    def test_max_is_15(self):
-        assert RATE_LIMIT_MAX == 15
+    def test_max_is_100(self):
+        assert RATE_LIMIT_MAX == 100
