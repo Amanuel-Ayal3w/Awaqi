@@ -97,6 +97,9 @@ class Document(Base):
         nullable=True,
         index=True,
     )
+    external_id: Mapped[str | None] = mapped_column(String(128), nullable=True, index=True)
+    source_system: Mapped[str] = mapped_column(String(32), nullable=False, default="upload")
+    storage_path: Mapped[str | None] = mapped_column(String(512), nullable=True)
 
     # Relationship
     uploader: Mapped["BaUser | None"] = relationship(

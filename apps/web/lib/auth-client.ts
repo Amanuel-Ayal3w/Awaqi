@@ -3,7 +3,7 @@ import { adminClient } from "better-auth/client/plugins";
 import { adminAc, userAc } from "better-auth/plugins/admin/access";
 
 export const authClient = createAuthClient({
-  baseURL: process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000",
+  baseURL: process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3100",
   plugins: [
     adminClient({
       roles: {

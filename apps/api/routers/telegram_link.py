@@ -38,7 +38,7 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 _LINK_TOKEN_TTL = 600  # 10 minutes
-_WEB_BASE_URL = os.environ.get("NEXT_PUBLIC_APP_URL", "http://localhost:3000")
+_WEB_BASE_URL = os.environ.get("NEXT_PUBLIC_APP_URL", "http://localhost:3100")
 _BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "")
 
 

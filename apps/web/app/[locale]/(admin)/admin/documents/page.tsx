@@ -1,10 +1,13 @@
 "use client"
 
 import { useCallback, useEffect, useMemo, useState } from "react"
+import { useRouter } from "next/navigation"
+import { useLocale } from "next-intl"
 import { ColumnDef } from "@tanstack/react-table"
 import { Eye, Loader2, RefreshCw } from "lucide-react"
 import { adminApi } from "@/lib/api"
-import type { AdminDocumentDetail, AdminDocumentItem, AdminUserItem } from "@/types/api"
+import { adminDocumentReviewPath } from "@/lib/admin-routes"
+import type { AdminDocumentItem, AdminUserItem } from "@/types/api"
 import { DataTable } from "@/components/ui/data-table"
 import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
@@ -15,21 +18,14 @@ import {
     SelectTrigger,
     SelectValue,
 } from "@/components/ui/select"
-import {
-    Dialog,
-    DialogContent,
-    DialogFooter,
-    DialogHeader,
-    DialogTitle,
-} from "@/components/ui/dialog"
 import { Label } from "@/components/ui/label"
-import { Textarea } from "@/components/ui/textarea"
-import { Input } from "@/components/ui/input"
 import { authClient } from "@/lib/auth-client"
 
 type DocRow = AdminDocumentItem
 
 export default function AdminDocumentsPage() {
+    const router = useRouter()
+    const locale = useLocale()
     const { data: session } = authClient.useSession()
     const role = (session?.user as any)?.role as string | undefined
     const isSuperadmin = role === "superadmin"
@@ -40,16 +36,6 @@ export default function AdminDocumentsPage() {
     const [isLoading, setIsLoading] = useState(true)
     const [isRefreshing, setIsRefreshing] = useState(false)
     const [error, setError] = useState<string | null>(null)
-
-    const [detailOpen, setDetailOpen] = useState(false)
-    const [detail, setDetail] = useState<AdminDocumentDetail | null>(null)
-    const [detailLoading, setDetailLoading] = useState(false)
-    const [ingestText, setIngestText] = useState("")
-    const [ingestBusy, setIngestBusy] = useState(false)
-    const [ingestError, setIngestError] = useState<string | null>(null)
-    const [reassignId, setReassignId] = useState("")
-    const [reassignBusy, setReassignBusy] = useState(false)
-    const [reassignError, setReassignError] = useState<string | null>(null)
 
     const loadUsers = useCallback(async () => {
         if (!isSuperadmin) return
@@ -88,61 +74,12 @@ export default function AdminDocumentsPage() {
         void refreshDocuments()
     }, [refreshDocuments])
 
-    const openDetail = async (docId: string) => {
-        setDetailOpen(true)
-        setDetailLoading(true)
-        setIngestText("")
-        setIngestError(null)
-        setReassignError(null)
-        setReassignId("")
-        try {
-            const d = await adminApi.getDocument(docId)
-            setDetail(d)
-            setReassignId(d.uploaded_by_id ?? "")
-        } catch {
-            setDetail(null)
-        } finally {
-            setDetailLoading(false)
-        }
-    }
-
-    const handleIngest = async () => {
-        if (!detail) return
-        setIngestBusy(true)
-        setIngestError(null)
-        try {
-            await adminApi.ingestPlainText(detail.id, ingestText)
-            const d = await adminApi.getDocument(detail.id)
-            setDetail(d)
-            await refreshDocuments()
-        } catch (err: unknown) {
-            const ax = err as { response?: { data?: { detail?: string } } }
-            const d = ax.response?.data?.detail
-            setIngestError(typeof d === "string" ? d : "Ingest failed")
-        } finally {
-            setIngestBusy(false)
-        }
-    }
-
-    const handleReassign = async () => {
-        if (!detail || !isSuperadmin) return
-        setReassignBusy(true)
-        setReassignError(null)
-        try {
-            const trimmed = reassignId.trim()
-            const body =
-                trimmed === "" ? { uploaded_by_id: null as string | null } : { uploaded_by_id: trimmed }
-            const d = await adminApi.patchDocument(detail.id, body)
-            setDetail(d)
-            await refreshDocuments()
-        } catch (err: unknown) {
-            const ax = err as { response?: { data?: { detail?: string } } }
-            const d = ax.response?.data?.detail
-            setReassignError(typeof d === "string" ? d : "Update failed")
-        } finally {
-            setReassignBusy(false)
-        }
-    }
+    const openReview = useCallback(
+        (docId: string) => {
+            router.push(adminDocumentReviewPath(locale, docId, "documents"))
+        },
+        [locale, router]
+    )
 
     const columns: ColumnDef<DocRow>[] = useMemo(
         () => [
@@ -226,14 +163,14 @@ export default function AdminDocumentsPage() {
                 id: "actions",
                 header: "",
                 cell: ({ row }) => (
-                    <Button variant="outline" size="sm" className="gap-1" onClick={() => void openDetail(row.original.id)}>
+                    <Button variant="outline" size="sm" className="gap-1" onClick={() => openReview(row.original.id)}>
                         <Eye className="h-3.5 w-3.5" />
                         View
                     </Button>
                 ),
             },
         ],
-        []
+        [openReview]
     )
 
     return (
@@ -242,8 +179,8 @@ export default function AdminDocumentsPage() {
                 <div>
                     <h1 className="text-3xl font-bold tracking-tight">Documents</h1>
                     <p className="text-muted-foreground">
-                        Inspect ingestion status, filter by uploader (superadmin), and re-index from plain text when a
-                        document is stuck in manual review.
+                        Open a document to review PDF and transcript side by side, correct OCR, and index. Superadmins
+                        can filter by uploader.
                     </p>
                 </div>
                 <Button
@@ -282,115 +219,14 @@ export default function AdminDocumentsPage() {
             {isLoading ? (
                 <p className="text-sm text-muted-foreground">Loading documents…</p>
             ) : (
-                <DataTable columns={columns} data={documents} />
+                <DataTable
+                    columns={columns}
+                    data={documents}
+                    initialPageSize={10}
+                    pageSizeOptions={[10, 50, 100]}
+                />
             )}
 
-            <Dialog open={detailOpen} onOpenChange={setDetailOpen}>
-                <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-lg">
-                    <DialogHeader>
-                        <DialogTitle>Document detail</DialogTitle>
-                    </DialogHeader>
-                    {detailLoading ? (
-                        <div className="flex justify-center py-8">
-                            <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
-                        </div>
-                    ) : detail ? (
-                        <div className="grid gap-3 text-sm">
-                            <div>
-                                <span className="text-muted-foreground">Title</span>
-                                <p className="font-medium">{detail.title}</p>
-                            </div>
-                            <div className="grid grid-cols-2 gap-2">
-                                <div>
-                                    <span className="text-muted-foreground">Status</span>
-                                    <p>{detail.status}</p>
-                                </div>
-                                <div>
-                                    <span className="text-muted-foreground">Stage</span>
-                                    <p>{detail.processing_stage ?? "—"}</p>
-                                </div>
-                            </div>
-                            <div>
-                                <span className="text-muted-foreground">Ingest error</span>
-                                <p className="break-words text-xs">{detail.ingest_error ?? "—"}</p>
-                            </div>
-                            <div className="grid grid-cols-2 gap-2 text-xs">
-                                <div>
-                                    <span className="text-muted-foreground">Bytes</span>
-                                    <p>{detail.byte_size ?? "—"}</p>
-                                </div>
-                                <div>
-                                    <span className="text-muted-foreground">Registry key</span>
-                                    <p className="break-all">{detail.registry_key ?? "—"}</p>
-                                </div>
-                            </div>
-                            <div>
-                                <span className="text-muted-foreground">File hash</span>
-                                <p className="break-all font-mono text-xs">{detail.file_hash ?? "—"}</p>
-                            </div>
-                            <div>
-                                <span className="text-muted-foreground">Uploader</span>
-                                <p>
-                                    {detail.uploaded_by_email ?? "—"}
-                                    {detail.uploaded_by_id ? (
-                                        <span className="ml-1 font-mono text-xs text-muted-foreground">
-                                            ({detail.uploaded_by_id})
-                                        </span>
-                                    ) : null}
-                                </p>
-                            </div>
-
-                            <div className="space-y-2 border-t pt-3">
-                                <Label htmlFor="ingest-plain">Plain text re-index</Label>
-                                <Textarea
-                                    id="ingest-plain"
-                                    rows={8}
-                                    placeholder="Paste corrected UTF-8 text…"
-                                    value={ingestText}
-                                    onChange={(e) => setIngestText(e.target.value)}
-                                    disabled={ingestBusy}
-                                />
-                                {ingestError ? <p className="text-xs text-destructive">{ingestError}</p> : null}
-                                <Button size="sm" onClick={() => void handleIngest()} disabled={ingestBusy}>
-                                    {ingestBusy ? (
-                                        <>
-                                            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                                            Re-indexing…
-                                        </>
-                                    ) : (
-                                        "Submit text & re-index"
-                                    )}
-                                </Button>
-                            </div>
-
-                            {isSuperadmin ? (
-                                <div className="space-y-2 border-t pt-3">
-                                    <Label htmlFor="reassign-uploader">Re-attribute uploader (ba_user UUID)</Label>
-                                    <Input
-                                        id="reassign-uploader"
-                                        placeholder="UUID or empty for none"
-                                        value={reassignId}
-                                        onChange={(e) => setReassignId(e.target.value)}
-                                        disabled={reassignBusy}
-                                        className="font-mono text-xs"
-                                    />
-                                    {reassignError ? <p className="text-xs text-destructive">{reassignError}</p> : null}
-                                    <Button size="sm" variant="secondary" onClick={() => void handleReassign()} disabled={reassignBusy}>
-                                        {reassignBusy ? "Saving…" : "Save uploader"}
-                                    </Button>
-                                </div>
-                            ) : null}
-                        </div>
-                    ) : (
-                        <p className="text-sm text-muted-foreground">Could not load document.</p>
-                    )}
-                    <DialogFooter>
-                        <Button variant="outline" onClick={() => setDetailOpen(false)}>
-                            Close
-                        </Button>
-                    </DialogFooter>
-                </DialogContent>
-            </Dialog>
         </div>
     )
 }

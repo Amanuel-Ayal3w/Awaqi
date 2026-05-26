@@ -39,4 +39,4 @@ This is the Next.js frontend for the Awaqi Ethio-Revenue-Bot.
    npm run dev
    ```
 
-3. Open [http://localhost:3000](http://localhost:3000) with your browser.
+3. Open [http://localhost:3100](http://localhost:3100) with your browser.

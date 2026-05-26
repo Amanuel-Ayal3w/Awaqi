@@ -93,13 +93,31 @@ The API will be available at `http://localhost:8000`.
 |---|---|---|
 | `DATABASE_URL` | `postgresql+asyncpg://user:password@localhost:5432/awaqi_db` | Async PostgreSQL connection |
 | `REDIS_URL` | `redis://localhost:6379/0` | Redis connection |
-| `ALLOWED_ORIGINS` | `http://localhost:3000,http://127.0.0.1:3000` | Comma-separated CORS origins |
-| `SCRAPER_SCHEDULER_ENABLED` | `true` | When `true`, the API starts a daily MoR scrape job at **00:00** `Africa/Addis_Ababa` |
-| `MOR_SCRAPE_SEED_URLS` | (see `packages/ai-engine` scraper defaults) | Comma-separated listing URLs on mor.gov.et |
-| `MOR_SCRAPE_MAX_DEPTH` | `1` | Same-site link crawl depth after seeds (`0` = seeds only) |
-| `MOR_SCRAPE_MAX_PAGES` | `40` | Max HTML pages fetched per scrape run |
-| `MOR_SCRAPE_MAX_LINKS` | `30` | Max PDF URLs downloaded / ingested per run |
+| `ALLOWED_ORIGINS` | `http://localhost:3100,http://127.0.0.1:3100` | Comma-separated CORS origins |
+| `SCRAPER_SCHEDULER_ENABLED` | `true` | When `true`, the API starts a daily MoR scrape job (default **00:00** `Africa/Addis_Ababa`) |
+| `SCRAPER_CRON_HOUR` | `0` | Cron hour for scheduled scrape (overridable via admin UI / `scraper_config` table) |
+| `SCRAPER_CRON_MINUTE` | `0` | Cron minute for scheduled scrape |
+| `MOR_API_BASE_URL` | `https://www.mor.gov.et/api` | MoR JSON API base (SPA loads PDFs from here) |
+| `MOR_SCRAPE_SEED_URLS` | Six law listing pages (see `.env.example`) | Frontend routes mapped to API discovery families |
+| `MOR_SCRAPE_MAX_LINKS` | `30` | Max PDFs downloaded / ingested per run |
+| `DOCUMENT_STORAGE_DIR` | `./data/documents` | On-disk storage for scraped PDF bytes |
 | `MOR_SCRAPER_USER_AGENT` | `AwaqiBot/1.0 (...)` | HTTP User-Agent for outbound scraper requests |
+| `MOR_HTTP_SSL_VERIFY` | `false` | Set `true` to verify MoR HTTPS certs; default `false` because mor.gov.et often fails Python TLS on macOS |
+| `OCR_LANGS` | `eng+amh` | Tesseract languages for scanned PDF fallback — **`amh` traineddata must be installed** (`apt install tesseract-ocr-amh` or `brew install tesseract-lang`) |
+| `OCR_RENDER_SCALE` | `3.0` | PDF page render scale before OCR (higher = slower, often better for Amharic) |
+
+### Telegram channel scraper (@morwestaa)
+
+**Bot API cannot read channel history.** Scraping uses [Telethon](https://docs.telethon.dev/) (MTProto) with a user session.
+
+| Variable | Description |
+|----------|-------------|
+| `TELEGRAM_API_ID` / `TELEGRAM_API_HASH` | From https://my.telegram.org/apps |
+| `TELEGRAM_SESSION_STRING` | Run `uv run python scripts/telegram_gen_session.py` |
+| `TELEGRAM_CHANNEL` | Default `morwestaa` |
+| `TELEGRAM_SCRAPE_SINCE` | Default `2026-04-01` (only posts on/after this date) |
+
+Admin: `POST /v1/admin/telegram/scrape`, `GET /v1/admin/telegram/messages`, config at `/v1/admin/telegram/config`.
 
 ## Endpoints
 
@@ -126,6 +144,13 @@ The API will be available at `http://localhost:8000`.
 | `POST` | `/v1/admin/upload` | Admin | Upload a document (PDF) for ingestion |
 | `GET` | `/v1/admin/logs` | Admin | Fetch recent user query logs |
 | `POST` | `/v1/admin/scrape` | Superadmin | Run one MoR scrape cycle (same entrypoint as the scheduled job) |
+| `GET` | `/v1/admin/scraper/status` | Superadmin | Scheduler enabled, cron time, next run, last run |
+| `GET` | `/v1/admin/scraper/runs` | Superadmin | Scrape run history |
+| `GET` | `/v1/admin/scraper/config` | Superadmin | Current scraper configuration |
+| `PATCH` | `/v1/admin/scraper/config` | Superadmin | Update seeds, cron, limits; reschedules job |
+| `GET` | `/v1/admin/documents/{doc_id}/content` | Admin | Extracted text preview (chunks or live OCR) |
+| `GET` | `/v1/admin/documents/{doc_id}/file` | Admin | Download / inline PDF (disk or source URL) |
+| `POST` | `/v1/admin/documents/{doc_id}/retry-ingest` | Admin | Re-run OCR from stored PDF (`?force_index=true` optional) |
 
 ## Authentication
 
@@ -151,7 +176,10 @@ Defined in `schemas.py`:
 | `FeedbackRequest` | `POST /v1/chat/feedback/*` — `{score, comment?}` |
 | `DocumentStatus` | `POST /v1/admin/upload` — `{doc_id, status}` |
 | `LogEntryList` | `GET /v1/admin/logs` — `{logs: [{timestamp, level, message}]}` |
-| *(inline)* | `POST /v1/admin/scrape` — `{status: "ok", stats: {inserted, skipped, errors}}` |
+| `AdminScrapeResult` | `POST /v1/admin/scrape` — `{status, stats: {discovered, inserted, skipped, errors}}` |
+| `AdminScraperStatus` | `GET /v1/admin/scraper/status` |
+| `AdminScraperRunList` | `GET /v1/admin/scraper/runs` |
+| `AdminScraperConfig` | `GET/PATCH /v1/admin/scraper/config` |
 | `AdminUserList` | `GET /v1/admin/users` — `{users: [{id, name, email, role, is_active, created_at}]}` |
 
 ## Interactive Docs

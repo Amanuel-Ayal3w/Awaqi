@@ -32,7 +32,7 @@ dev:
 	@echo "$(BOLD)  STARTING DEV SERVERS$(RESET)"
 	@echo "$(LINE)"
 	@echo "  $(CYAN)Backend$(RESET)     http://localhost:8000"
-	@echo "  $(CYAN)Frontend$(RESET)   http://localhost:3000"
+	@echo "  $(CYAN)Frontend$(RESET)   http://localhost:3100"
 	@echo "  $(CYAN)Telegram bot$(RESET)  @ERATaxBot"
 	@echo "$(LINE)"
 	@set -a && [ -f .env ] && . ./.env; set +a; \
@@ -61,7 +61,7 @@ front:
 	@echo "$(LINE)"
 	@echo "$(BOLD)  STARTING FRONTEND$(RESET)"
 	@echo "$(LINE)"
-	@echo "  $(CYAN)Web$(RESET)  http://localhost:3000"
+	@echo "  $(CYAN)Web$(RESET)  http://localhost:3100"
 	@echo "$(LINE)"
 	@set -a && [ -f .env ] && . ./.env; set +a; \
 		cd apps/web && npm run dev
@@ -134,7 +134,7 @@ test-integration: test-db
 # --- Next.js Frontend -------------------------------------------------------
 build-web: export BETTER_AUTH_SECRET ?= $(shell openssl rand -base64 32)
 build-web: export DATABASE_URL_SYNC ?= postgresql://postgres:postgres@localhost:5432/awaqi_db
-build-web: export NEXT_PUBLIC_APP_URL ?= http://localhost:3000
+build-web: export NEXT_PUBLIC_APP_URL ?= http://localhost:3100
 build-web: export NEXT_PUBLIC_API_URL ?= http://localhost:8000
 build-web:
 	@echo ""

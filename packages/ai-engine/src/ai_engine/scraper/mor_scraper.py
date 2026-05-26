@@ -1,26 +1,17 @@
 """
 MoR (mor.gov.et) discovery and ingestion (AWA-5 / AWA-7 / AWA-11).
 
-The Ministry site uses Liferay-style paths (document libraries, ``view_file`` URLs).
-As of 2026, common entry points include:
-
-- Homepage: ``https://mor.gov.et`` / ``https://www.mor.gov.et``
-- Proclamations listing: ``https://www.mor.gov.et/web/mor/proclamations``
-- Directives listing: ``https://www.mor.gov.et/web/mor/directives``
-
-Site structure **changes over time** — verify URLs in a browser and override
-``MOR_SCRAPE_SEED_URLS`` if listings move.
+Discovery uses the MoR JSON API (``/api/*-categories`` + ``/*-by-category/{id}``).
+Seed URLs are frontend routes that map to API families — see ``mor_api.py``.
 
 Configuration:
 
-- ``MOR_SCRAPE_SEED_URLS``: comma-separated HTML pages to open first (PDF links and
-  internal links are collected per depth settings).
-- ``MOR_SCRAPE_MAX_DEPTH``: internal link follow depth (0 = seeds only; default ``1``
-  = seeds + one hop).
-- ``MOR_SCRAPE_MAX_PAGES``: max HTML pages fetched per run (budget for discovery).
-- ``MOR_SCRAPE_MAX_LINKS``: max PDF URLs processed per run (download + ingest cap).
+- ``MOR_SCRAPE_SEED_URLS``: comma-separated law listing page URLs (6 defaults).
+- ``MOR_API_BASE_URL``: API base (default ``https://www.mor.gov.et/api``).
+- ``MOR_SCRAPE_MAX_LINKS``: max PDFs downloaded + ingested per run.
+- ``DOCUMENT_STORAGE_DIR``: where scraped PDF bytes are stored on disk.
 
-Registry dedup uses SHA256("url:size") and byte ``file_hash`` (AWA-7).
+Registry dedup: ``registry_key`` (url:size), ``file_hash`` (bytes), ``(source_system, external_id)``.
 """
 
 from __future__ import annotations
@@ -29,56 +20,32 @@ import hashlib
 import logging
 import os
 import uuid
-from collections import deque
-from urllib.parse import urljoin, urlparse, urlunparse
 
 import httpx
-from bs4 import BeautifulSoup
 from database.db import AsyncSessionLocal
 from database.models.document import Document, DocumentStatus
 from sqlalchemy import select
 
 from ai_engine.ingest import ingest_bytes_for_document
 from ai_engine.scraper.http_retry import fetch_with_retry
+from ai_engine.scraper.mor_api import (
+    MorDiscoveredItem,
+    default_seed_urls,
+    discover_all_items,
+)
+from ai_engine.scraper.mor_http import create_mor_http_client
+from ai_engine.scraper.storage import save_document_pdf
 
 logger = logging.getLogger(__name__)
-
-USER_AGENT = os.getenv("MOR_SCRAPER_USER_AGENT", "AwaqiBot/1.0 (+https://github.com/aait/Awaqi)")
 MAX_LINKS_PER_RUN = int(os.getenv("MOR_SCRAPE_MAX_LINKS", "30"))
-MAX_PAGES_PER_RUN = int(os.getenv("MOR_SCRAPE_MAX_PAGES", "40"))
-MAX_DEPTH = int(os.getenv("MOR_SCRAPE_MAX_DEPTH", "1"))
+SOURCE_SYSTEM_MOR = "mor"
 
-_DEFAULT_SEED_LIST = [
-    "https://mor.gov.et",
-    "https://www.mor.gov.et/web/mor/proclamations",
-    "https://www.mor.gov.et/web/mor/directives",
-]
+_DEFAULT_SEED_LIST = default_seed_urls()
 
 DEFAULT_SEEDS = os.getenv(
     "MOR_SCRAPE_SEED_URLS",
     ",".join(_DEFAULT_SEED_LIST),
 ).split(",")
-
-_SKIP_LINK_SUFFIXES = (
-    ".pdf",
-    ".png",
-    ".jpg",
-    ".jpeg",
-    ".gif",
-    ".webp",
-    ".svg",
-    ".ico",
-    ".css",
-    ".js",
-    ".mjs",
-    ".woff",
-    ".woff2",
-    ".ttf",
-    ".zip",
-    ".rar",
-    ".mp4",
-    ".mp3",
-)
 
 
 def _registry_key(url: str, size: int) -> str:
@@ -90,189 +57,135 @@ def _trim_url(url: str, max_len: int = 160) -> str:
     return u if len(u) <= max_len else u[: max_len - 3] + "..."
 
 
-def _allowed_hosts_from_seeds(seeds: list[str]) -> set[str]:
-    out: set[str] = set()
-    for s in seeds:
-        netloc = urlparse(s.strip()).netloc.lower()
-        if netloc.startswith("www."):
-            netloc = netloc[4:]
-        if netloc:
-            out.add(netloc)
-    return out
+def _proclamation_number_label(item: MorDiscoveredItem) -> str | None:
+    if item.number is None:
+        return None
+    if item.year is not None:
+        return f"{item.number}/{item.year}"
+    return str(item.number)
 
 
-def _host_allowed(url: str, allowed: set[str]) -> bool:
-    netloc = urlparse(url).netloc.lower()
-    if netloc.startswith("www."):
-        netloc = netloc[4:]
-    return netloc in allowed
+def _title_with_metadata(item: MorDiscoveredItem) -> str:
+    base = item.title
+    num = _proclamation_number_label(item)
+    if num and num not in base:
+        return f"{base} ({num})"[:512]
+    return base[:512]
 
 
-def _visit_key(url: str) -> str:
-    """Normalize URL for visited-set (ignore fragment)."""
-    p = urlparse(url)
-    path = p.path if p.path else "/"
-    return urlunparse(
-        (
-            p.scheme.lower(),
-            p.netloc.lower(),
-            path.rstrip("/") or "/",
-            "",
-            p.query,
-            "",
+async def _find_by_external_id(db, external_id: str) -> Document | None:
+    result = await db.execute(
+        select(Document).where(
+            Document.source_system == SOURCE_SYSTEM_MOR,
+            Document.external_id == external_id,
         )
     )
+    return result.scalar_one_or_none()
 
 
-def _extract_pdf_links(html: str, base_url: str) -> list[str]:
-    soup = BeautifulSoup(html, "lxml")
-    found: list[str] = []
-    for a in soup.find_all("a", href=True):
-        href = str(a["href"]).strip()
-        low = href.lower()
-        if "mailto:" in low or low.startswith("javascript:"):
-            continue
-        joined = urljoin(base_url, href)
-        if joined.lower().split("?", 1)[0].endswith(".pdf"):
-            found.append(joined)
-    return list(dict.fromkeys(found))
+async def _should_skip_item(
+    db,
+    item: MorDiscoveredItem,
+    file_hash: str,
+    registry_key: str,
+) -> tuple[bool, Document | None]:
+    """Return (skip, existing_doc). Re-ingest when same external_id but hash changed."""
+    existing_ext = await _find_by_external_id(db, item.external_id)
+    if existing_ext is not None:
+        if existing_ext.file_hash == file_hash:
+            return True, existing_ext
+        return False, existing_ext
+
+    dup_rk = await db.execute(select(Document.id).where(Document.registry_key == registry_key))
+    if dup_rk.scalar_one_or_none():
+        return True, None
+
+    dup_fh = await db.execute(select(Document.id).where(Document.file_hash == file_hash))
+    if dup_fh.scalar_one_or_none():
+        return True, None
+
+    return False, None
 
 
-def _extract_same_site_html_links(html: str, base_url: str, allowed_hosts: set[str]) -> list[str]:
-    soup = BeautifulSoup(html, "lxml")
-    found: list[str] = []
-    for a in soup.find_all("a", href=True):
-        href = str(a["href"]).strip()
-        low = href.lower()
-        if "mailto:" in low or low.startswith("javascript:") or low.startswith("#"):
-            continue
-        joined = urljoin(base_url, href)
-        parsed = urlparse(joined)
-        if parsed.scheme not in ("http", "https"):
-            continue
-        if not _host_allowed(joined, allowed_hosts):
-            continue
-        path_lower = (parsed.path or "").lower()
-        query_lower = (parsed.query or "").lower()
-        joined_lower = joined.lower()
-        if joined_lower.split("?", 1)[0].endswith(".pdf"):
-            continue
-        if any(path_lower.endswith(s) or query_lower.endswith(s) for s in _SKIP_LINK_SUFFIXES):
-            continue
-        if any(joined_lower.endswith(s) for s in _SKIP_LINK_SUFFIXES):
-            continue
-        found.append(joined)
-    return list(dict.fromkeys(found))
-
-
-async def _discover_pdf_urls(client: httpx.AsyncClient) -> list[str]:
-    seeds = [s.strip() for s in DEFAULT_SEEDS if s.strip()]
-    if not seeds:
-        return []
-
-    allowed_hosts = _allowed_hosts_from_seeds(seeds)
-    queue: deque[tuple[str, int]] = deque((u, 0) for u in seeds)
-    visited: set[str] = set()
-    pdf_urls: list[str] = []
-    pages_fetched = 0
-
-    while queue and pages_fetched < MAX_PAGES_PER_RUN:
-        url, depth = queue.popleft()
-        vk = _visit_key(url)
-        if vk in visited:
-            continue
-        visited.add(vk)
-
-        try:
-            r = await fetch_with_retry(client, url)
-            text = r.text
-        except httpx.HTTPError:
-            logger.warning(
-                "scrape_seed_fetch_failed url=%s",
-                _trim_url(url),
-                exc_info=False,
-            )
-            continue
-
-        pages_fetched += 1
-        for p in _extract_pdf_links(text, url):
-            if p not in pdf_urls:
-                pdf_urls.append(p)
-        if len(pdf_urls) >= MAX_LINKS_PER_RUN:
-            return pdf_urls[:MAX_LINKS_PER_RUN]
-
-        if depth < MAX_DEPTH:
-            for link in _extract_same_site_html_links(text, url, allowed_hosts):
-                lk = _visit_key(link)
-                if lk not in visited:
-                    queue.append((link, depth + 1))
-
-    return list(dict.fromkeys(pdf_urls))[:MAX_LINKS_PER_RUN]
-
-
-async def run_mor_scrape_cycle() -> dict[str, int]:
+async def run_mor_scrape_cycle(
+    *,
+    seed_urls: list[str] | None = None,
+    max_links: int | None = None,
+) -> dict[str, int]:
     """
-    Fetch seed pages (and shallow internal links), discover PDFs, skip known
-    ``registry_key`` / ``file_hash``, insert ``Document`` rows and run ingestion.
+    Discover PDFs via MoR API, download new/changed files, persist to disk, ingest.
     """
-    stats: dict[str, int] = {"inserted": 0, "skipped": 0, "errors": 0}
-    seeds = [s.strip() for s in DEFAULT_SEEDS if s.strip()]
+    stats: dict[str, int] = {
+        "discovered": 0,
+        "inserted": 0,
+        "skipped": 0,
+        "errors": 0,
+    }
+    raw_seeds = seed_urls if seed_urls is not None else DEFAULT_SEEDS
+    seeds = [s.strip() for s in raw_seeds if s.strip()]
+    link_cap = max_links if max_links is not None else MAX_LINKS_PER_RUN
     if not seeds:
         logger.info("No MOR_SCRAPE_SEED_URLS configured; scrape cycle no-op")
         return stats
 
-    limits = httpx.Limits(max_keepalive_connections=5, max_connections=10)
-    timeout = httpx.Timeout(120.0, connect=30.0)
-    headers = {"User-Agent": USER_AGENT}
-
-    async with httpx.AsyncClient(
-        headers=headers,
-        limits=limits,
-        timeout=timeout,
-        follow_redirects=True,
-    ) as client:
+    async with create_mor_http_client() as client:
         try:
-            all_links = await _discover_pdf_urls(client)
+            all_items = await discover_all_items(client, seeds)
         except Exception:
-            logger.exception("discover_pdf_urls_failed")
+            logger.exception("mor_api_discover_failed")
             stats["errors"] += 1
             return stats
 
-        for url in all_links:
+        stats["discovered"] = len(all_items)
+        items_to_process = all_items[:link_cap]
+
+        for item in items_to_process:
             async with AsyncSessionLocal() as db:
                 try:
-                    r = await fetch_with_retry(client, url)
+                    r = await fetch_with_retry(client, item.pdf_url)
                     data = r.content
                     size = len(data)
-                    rk = _registry_key(url, size)
+                    rk = _registry_key(item.pdf_url, size)
                     fh = hashlib.sha256(data).hexdigest()
 
-                    dup_rk = await db.execute(
-                        select(Document.id).where(Document.registry_key == rk)
-                    )
-                    if dup_rk.scalar_one_or_none():
+                    skip, existing = await _should_skip_item(db, item, fh, rk)
+                    if skip:
                         stats["skipped"] += 1
                         continue
 
-                    dup_fh = await db.execute(
-                        select(Document.id).where(Document.file_hash == fh)
-                    )
-                    if dup_fh.scalar_one_or_none():
-                        stats["skipped"] += 1
-                        continue
+                    title = _title_with_metadata(item)
+                    proclamation_number = _proclamation_number_label(item)
 
-                    title = urlparse(url).path.rsplit("/", 1)[-1] or "document.pdf"
-                    title = title[:512]
-                    doc = Document(
-                        id=uuid.uuid4(),
-                        title=title,
-                        source_url=url[:2048],
-                        file_hash=fh,
-                        registry_key=rk,
-                        byte_size=size,
-                        status=DocumentStatus.PENDING,
-                    )
-                    db.add(doc)
+                    if existing is not None:
+                        doc = existing
+                        doc.title = title
+                        doc.source_url = item.pdf_url[:2048]
+                        doc.file_hash = fh
+                        doc.registry_key = rk
+                        doc.byte_size = size
+                        doc.proclamation_number = proclamation_number
+                        doc.status = DocumentStatus.PENDING
+                        doc.ingest_error = None
+                        doc.processing_stage = None
+                    else:
+                        doc = Document(
+                            id=uuid.uuid4(),
+                            title=title,
+                            source_url=item.pdf_url[:2048],
+                            file_hash=fh,
+                            registry_key=rk,
+                            byte_size=size,
+                            status=DocumentStatus.PENDING,
+                            source_system=SOURCE_SYSTEM_MOR,
+                            external_id=item.external_id,
+                            proclamation_number=proclamation_number,
+                            language="am",
+                        )
+                        db.add(doc)
+                        await db.flush()
+
+                    storage_rel = save_document_pdf(doc.id, data)
+                    doc.storage_path = storage_rel
                     await db.commit()
                     await db.refresh(doc)
 
@@ -281,20 +194,24 @@ async def run_mor_scrape_cycle() -> dict[str, int]:
                         doc,
                         data,
                         mime_type="application/pdf",
-                        filename=title,
+                        filename=f"{doc.id}.pdf",
                         genai_client=None,
                     )
                     stats["inserted"] += 1
                 except httpx.HTTPError:
                     logger.warning(
                         "scrape_pdf_fetch_failed url=%s",
-                        _trim_url(url),
+                        _trim_url(item.pdf_url),
                         exc_info=False,
                     )
                     stats["errors"] += 1
                     await db.rollback()
                 except Exception:
-                    logger.exception("scrape_url_failed url=%s", _trim_url(url))
+                    logger.exception(
+                        "scrape_item_failed external_id=%s url=%s",
+                        item.external_id,
+                        _trim_url(item.pdf_url),
+                    )
                     stats["errors"] += 1
                     await db.rollback()
 

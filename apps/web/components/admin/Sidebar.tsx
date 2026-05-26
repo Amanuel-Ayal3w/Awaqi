@@ -8,6 +8,7 @@ import {
     FileText,
     Globe,
     Files,
+    Send,
     BarChart3,
     Users,
     Settings,
@@ -54,6 +55,11 @@ export function AdminSidebar() {
                 title: "Documents",
                 href: `/${locale}/admin/documents`,
                 icon: Files,
+            },
+            {
+                title: "Telegram",
+                href: `/${locale}/admin/telegram`,
+                icon: Send,
             },
             {
                 title: "Analytics",

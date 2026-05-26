@@ -8,7 +8,7 @@ const betterAuthSecret = getValidatedBetterAuthSecret();
 
 export const auth = betterAuth({
   secret: betterAuthSecret,
-  baseURL: process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000",
+  baseURL: process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3100",
   database: new Pool({
     connectionString: process.env.DATABASE_URL_SYNC,
   }),

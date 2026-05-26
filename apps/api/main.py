@@ -2,45 +2,24 @@ import logging
 import os
 from contextlib import asynccontextmanager
 
-from ai_engine.web_scraper import WebScraper
-from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from apps.api.routers import admin, chat, telegram_link
+from apps.api.scraper_scheduler import apply_scheduler_config
 
 logger = logging.getLogger(__name__)
 
 
-async def _safe_scheduled_scrape() -> None:
-    try:
-        stats = await WebScraper().scan_for_updates()
-        logger.info("scheduled_mor_scrape stats=%s", stats)
-    except Exception:
-        logger.exception("scheduled_mor_scrape_failed")
-
-
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    scheduler: AsyncIOScheduler | None = None
-    enabled = os.getenv("SCRAPER_SCHEDULER_ENABLED", "true").lower() in (
-        "1",
-        "true",
-        "yes",
-    )
-    if enabled:
-        scheduler = AsyncIOScheduler(timezone="Africa/Addis_Ababa")
-        scheduler.add_job(
-            _safe_scheduled_scrape,
-            "cron",
-            hour=0,
-            minute=0,
-            id="mor_daily_scrape",
-            replace_existing=True,
-        )
-        scheduler.start()
-        logger.info("APScheduler started: daily MoR scrape at 00:00 Africa/Addis_Ababa")
+    app.state.scraper_scheduler = None
+    try:
+        await apply_scheduler_config(app)
+    except Exception:
+        logger.exception("scraper_scheduler_startup_failed")
     yield
+    scheduler = getattr(app.state, "scraper_scheduler", None)
     if scheduler is not None:
         scheduler.shutdown(wait=False)
 
@@ -51,7 +30,7 @@ app = FastAPI(title="Awaqi API", version="1.0.0", lifespan=lifespan)
 # Defaults include both localhost and 127.0.0.1 for local development.
 _raw_origins = os.getenv(
     "ALLOWED_ORIGINS",
-    "http://localhost:3000,http://127.0.0.1:3000",
+    "http://localhost:3100,http://127.0.0.1:3100",
 )
 allowed_origins = list(
     dict.fromkeys([o.strip() for o in _raw_origins.split(",") if o.strip()])
