@@ -117,7 +117,7 @@ test-unit:
 	@echo "$(LINE)"
 	@echo "$(BOLD)  UNIT TESTS (no DB needed)$(RESET)"
 	@echo "$(LINE)"
-	@uv run --package api pytest tests/api/test_schemas.py tests/api/test_session_token.py tests/packages/ -v --tb=short \
+	@uv run --package api pytest tests/api/test_schemas.py tests/api/test_session_token.py tests/packages/ packages/ai-engine/tests/ -v --tb=short \
 		&& echo "" && echo "$(GREEN)--- PASS: unit tests$(RESET)" \
 		|| (echo "" && echo "$(RED)--- FAIL: unit tests -- see errors above$(RESET)" && exit 1)
 
