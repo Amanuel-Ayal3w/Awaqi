@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
 import uuid
 from collections.abc import Sequence
 
@@ -14,7 +15,7 @@ from database.models.document import DocumentChunk
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from ai_engine.e5_embedder import embed_query_sync
+from ai_engine.e5_embedder import embed_query_sync as _e5_embed_query_sync
 from ai_engine.query_nlu import build_e5_query_text
 
 logger = logging.getLogger(__name__)
@@ -37,6 +38,14 @@ def reciprocal_rank_fusion(
     return ordered[:top_n]
 
 
+def _embed_query(text: str) -> list[float]:
+    """Use Gemini embedding-2 when GOOGLE_API_KEY is available, else fall back to E5."""
+    if os.getenv("GOOGLE_API_KEY"):
+        from ai_engine.gemini_embedder import embed_query_gemini_sync
+        return embed_query_gemini_sync(text)
+    return _e5_embed_query_sync(text)
+
+
 async def retrieve_fused_chunk_ids(
     db: AsyncSession,
     user_query: str,
@@ -50,7 +59,7 @@ async def retrieve_fused_chunk_ids(
     q_for_vec = build_e5_query_text(user_query, taxpayer_category=taxpayer_category)
 
     def _embed() -> list[float]:
-        return embed_query_sync(q_for_vec)
+        return _embed_query(q_for_vec)
 
     vec_task = asyncio.to_thread(_embed)
     bm25_task = bm25_search_chunk_ids(
