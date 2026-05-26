@@ -5,6 +5,7 @@ description = "Core AI logic for Awaqi"
 requires-python = ">=3.11"
 dependencies = [
     "google-genai",
+    "openai>=1.0.0",
     "pypdf",
     "numpy",
     "database",

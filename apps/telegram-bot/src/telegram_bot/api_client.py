@@ -14,7 +14,7 @@ from typing import Optional
 import httpx
 
 API_BASE_URL = os.environ.get("TELEGRAM_API_BASE_URL", "http://localhost:8000").rstrip("/")
-REQUEST_TIMEOUT = float(os.environ.get("TELEGRAM_API_TIMEOUT", "15"))
+REQUEST_TIMEOUT = float(os.environ.get("TELEGRAM_API_TIMEOUT", "60"))
 
 
 @dataclass
