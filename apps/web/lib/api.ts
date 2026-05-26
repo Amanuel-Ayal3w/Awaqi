@@ -12,6 +12,7 @@ import type {
     AdminScraperRunList,
     AdminScraperStatus,
     AdminSystemHealth,
+    AdminTelegramClearResult,
     AdminTelegramConfig,
     AdminTelegramConfigPatch,
     AdminTelegramMessageList,
@@ -316,13 +317,54 @@ export const adminApi = {
         limit?: number;
         offset?: number;
         channel?: string;
+        message_type?: string;
+        document_status?: string;
+        ingest_filter?: string;
+        search?: string;
     }): Promise<AdminTelegramMessageList> => {
         const params = new URLSearchParams();
-        params.set("limit", String(options?.limit ?? 50));
+        params.set("limit", String(options?.limit ?? 500));
         params.set("offset", String(options?.offset ?? 0));
         if (options?.channel) params.set("channel", options.channel);
+        if (options?.message_type) params.set("message_type", options.message_type);
+        if (options?.document_status) params.set("document_status", options.document_status);
+        if (options?.ingest_filter) params.set("ingest_filter", options.ingest_filter);
+        if (options?.search) params.set("search", options.search);
         const { data } = await apiClient.get<AdminTelegramMessageList>(
             `/v1/admin/telegram/messages?${params.toString()}`
+        );
+        return data;
+    },
+
+    clearTelegramMessages: async (options?: {
+        channel?: string;
+        delete_documents?: boolean;
+    }): Promise<AdminTelegramClearResult> => {
+        const params = new URLSearchParams();
+        if (options?.channel) params.set("channel", options.channel);
+        if (options?.delete_documents === false) params.set("delete_documents", "false");
+        const { data } = await apiClient.delete<AdminTelegramClearResult>(
+            `/v1/admin/telegram/messages/clear?${params.toString()}`
+        );
+        return data;
+    },
+
+    deleteTelegramMessage: async (
+        rowId: string,
+        options?: { delete_document?: boolean }
+    ): Promise<void> => {
+        const q =
+            options?.delete_document === false ? "?delete_document=false" : "";
+        await apiClient.delete(`/v1/admin/telegram/messages/${rowId}${q}`);
+    },
+
+    reingestTelegramMessage: async (
+        rowId: string,
+        options?: { force_index?: boolean }
+    ): Promise<{ status: string }> => {
+        const q = options?.force_index ? "?force_index=true" : "";
+        const { data } = await apiClient.post<{ status: string }>(
+            `/v1/admin/telegram/messages/${rowId}/reingest${q}`
         );
         return data;
     },

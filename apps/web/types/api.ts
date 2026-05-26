@@ -222,10 +222,15 @@ export interface AdminTelegramConfigPatch {
     cron_minute?: number;
 }
 
+export interface AdminTelegramClearResult {
+    deleted: number;
+}
+
 export interface AdminTelegramMessageItem {
     id: string;
     channel_username: string;
     message_id: number;
+    content_part: string;
     posted_at: string;
     message_type: string;
     text_preview?: string | null;

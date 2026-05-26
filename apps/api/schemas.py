@@ -262,10 +262,15 @@ class AdminTelegramConfigPatch(BaseModel):
     cron_minute: Optional[int] = None
 
 
+class AdminTelegramClearResult(BaseModel):
+    deleted: int
+
+
 class AdminTelegramMessageItem(BaseModel):
     id: str
     channel_username: str
     message_id: int
+    content_part: str
     posted_at: str
     message_type: str
     text_preview: Optional[str] = None

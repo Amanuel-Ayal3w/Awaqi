@@ -45,6 +45,14 @@ def read_document_file(storage_path: str | None) -> bytes | None:
     return path.read_bytes()
 
 
+def delete_storage_file(storage_path: str | None) -> None:
+    if not storage_path:
+        return
+    path = document_storage_root() / storage_path
+    if path.is_file():
+        path.unlink(missing_ok=True)
+
+
 def guess_media_type(storage_path: str | None) -> str:
     if not storage_path:
         return "application/octet-stream"

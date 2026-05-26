@@ -10,9 +10,12 @@ import {
     ExternalLink,
     Eye,
     Loader2,
+    MoreHorizontal,
     Play,
     RefreshCw,
+    RotateCcw,
     Save,
+    Trash2,
 } from "lucide-react"
 import { adminApi } from "@/lib/api"
 import { adminDocumentReviewPath } from "@/lib/admin-routes"
@@ -27,7 +30,24 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Badge } from "@/components/ui/badge"
+import {
+    Select,
+    SelectContent,
+    SelectItem,
+    SelectTrigger,
+    SelectValue,
+} from "@/components/ui/select"
+import {
+    DropdownMenu,
+    DropdownMenuContent,
+    DropdownMenuItem,
+    DropdownMenuSeparator,
+    DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu"
 import { cn } from "@/lib/utils"
+
+const TYPE_FILTER_ALL = "__all__"
+const INGEST_FILTER_ALL = "__all__"
 
 export default function AdminTelegramPage() {
     const router = useRouter()
@@ -39,37 +59,57 @@ export default function AdminTelegramPage() {
     const [channel, setChannel] = useState("morwestaa")
     const [scrapeSince, setScrapeSince] = useState("2026-04-01")
     const [maxMessages, setMaxMessages] = useState("200")
+    const [filterType, setFilterType] = useState(TYPE_FILTER_ALL)
+    const [filterIngest, setFilterIngest] = useState(INGEST_FILTER_ALL)
+    const [search, setSearch] = useState("")
+    const [tableSearch, setTableSearch] = useState("")
     const [isLoading, setIsLoading] = useState(true)
     const [isScraping, setIsScraping] = useState(false)
     const [isSaving, setIsSaving] = useState(false)
+    const [isClearing, setIsClearing] = useState(false)
+    const [busyRowId, setBusyRowId] = useState<string | null>(null)
     const [error, setError] = useState<string | null>(null)
     const [lastStats, setLastStats] = useState<string | null>(null)
+
+    const loadMessages = useCallback(async () => {
+        const msgRes = await adminApi.listTelegramMessages({
+            limit: 500,
+            channel: channel.replace(/^@/, ""),
+            message_type: filterType === TYPE_FILTER_ALL ? undefined : filterType,
+            ingest_filter: filterIngest === INGEST_FILTER_ALL ? undefined : filterIngest,
+            search: search.trim() || undefined,
+        })
+        setMessages(msgRes.messages)
+        setTotal(msgRes.total)
+    }, [channel, filterType, filterIngest, search])
 
     const loadAll = useCallback(async () => {
         setError(null)
         try {
-            const [cfg, msgRes, runRes] = await Promise.all([
+            const [cfg, runRes] = await Promise.all([
                 adminApi.getTelegramConfig(),
-                adminApi.listTelegramMessages({ limit: 100 }),
                 adminApi.getTelegramRuns(15),
             ])
             setConfig(cfg)
             setChannel(cfg.channel_username)
             setScrapeSince(cfg.scrape_since.slice(0, 10))
             setMaxMessages(String(cfg.max_messages_per_run))
-            setMessages(msgRes.messages)
-            setTotal(msgRes.total)
             setRuns(runRes.runs)
+            await loadMessages()
         } catch (err: unknown) {
             setError(err instanceof Error ? err.message : "Failed to load Telegram scraper")
         } finally {
             setIsLoading(false)
         }
-    }, [])
+    }, [loadMessages])
 
     useEffect(() => {
         void loadAll()
     }, [loadAll])
+
+    useEffect(() => {
+        if (!isLoading) void loadMessages()
+    }, [filterType, filterIngest, search, loadMessages, isLoading])
 
     const handleSaveConfig = async () => {
         setIsSaving(true)
@@ -100,13 +140,72 @@ export default function AdminTelegramPage() {
                     `${s.text_posts} text, ${s.pdf_posts} pdf, ${s.pptx_posts} pptx, ` +
                     `${s.image_posts} images, ${s.errors} errors`
             )
-            await loadAll()
+            await loadMessages()
         } catch (err: unknown) {
             setError(err instanceof Error ? err.message : "Scrape failed")
         } finally {
             setIsScraping(false)
         }
     }
+
+    const handleClearAll = async () => {
+        const ok = window.confirm(
+            "Remove all tracked Telegram posts and linked Telegram documents? " +
+                "You will need to run scrape again to re-fetch them with the new logic."
+        )
+        if (!ok) return
+        setIsClearing(true)
+        setError(null)
+        try {
+            const res = await adminApi.clearTelegramMessages({
+                channel: channel.replace(/^@/, ""),
+                delete_documents: true,
+            })
+            setLastStats(`Cleared ${res.deleted} tracked rows`)
+            await loadMessages()
+        } catch (err: unknown) {
+            setError(err instanceof Error ? err.message : "Clear failed")
+        } finally {
+            setIsClearing(false)
+        }
+    }
+
+    const handleReingest = useCallback(
+        async (row: AdminTelegramMessageItem, force = false) => {
+            setBusyRowId(row.id)
+            setError(null)
+            try {
+                await adminApi.reingestTelegramMessage(row.id, { force_index: force })
+                await loadMessages()
+            } catch (err: unknown) {
+                setError(err instanceof Error ? err.message : "Re-ingest failed")
+            } finally {
+                setBusyRowId(null)
+            }
+        },
+        [loadMessages]
+    )
+
+    const handleRemove = useCallback(
+        async (row: AdminTelegramMessageItem) => {
+            const ok = window.confirm(
+                "Remove this tracked row" +
+                    (row.document_id ? " and delete its linked document?" : "?")
+            )
+            if (!ok) return
+            setBusyRowId(row.id)
+            setError(null)
+            try {
+                await adminApi.deleteTelegramMessage(row.id, { delete_document: true })
+                await loadMessages()
+            } catch (err: unknown) {
+                setError(err instanceof Error ? err.message : "Delete failed")
+            } finally {
+                setBusyRowId(null)
+            }
+        },
+        [loadMessages]
+    )
 
     const openReview = useCallback(
         (docId: string) => {
@@ -120,6 +219,10 @@ export default function AdminTelegramPage() {
             {
                 accessorKey: "posted_at",
                 header: "Posted",
+                enableSorting: true,
+                sortingFn: (a, b) =>
+                    new Date(a.original.posted_at).getTime() -
+                    new Date(b.original.posted_at).getTime(),
                 cell: ({ row }) => (
                     <span className="text-xs text-muted-foreground whitespace-nowrap">
                         {new Date(row.getValue("posted_at") as string).toLocaleString()}
@@ -129,14 +232,19 @@ export default function AdminTelegramPage() {
             {
                 accessorKey: "message_type",
                 header: "Type",
+                enableSorting: true,
                 cell: ({ row }) => {
                     const t = row.getValue("message_type") as string
+                    const part = row.original.content_part
                     const skip = row.original.skip_reason
                     return (
                         <div className="flex flex-col gap-0.5">
                             <Badge variant="outline" className="w-fit font-mono text-[10px] uppercase">
                                 {t}
                             </Badge>
+                            {part !== t ? (
+                                <span className="text-[10px] text-muted-foreground">{part}</span>
+                            ) : null}
                             {skip === "not_indexed" ? (
                                 <span className="text-[10px] text-muted-foreground">not indexed</span>
                             ) : null}
@@ -147,8 +255,9 @@ export default function AdminTelegramPage() {
             {
                 accessorKey: "text_preview",
                 header: "Preview",
+                enableSorting: true,
                 cell: ({ row }) => (
-                    <span className="line-clamp-2 max-w-[280px] text-xs">
+                    <span className="line-clamp-2 max-w-[300px] text-xs">
                         {row.original.text_preview || row.original.file_name || "—"}
                     </span>
                 ),
@@ -156,6 +265,11 @@ export default function AdminTelegramPage() {
             {
                 accessorKey: "document_status",
                 header: "Ingest",
+                enableSorting: true,
+                sortingFn: (a, b) =>
+                    (a.original.document_status ?? "").localeCompare(
+                        b.original.document_status ?? ""
+                    ),
                 cell: ({ row }) => {
                     const st = (row.getValue("document_status") as string | null)?.toLowerCase()
                     if (!st) {
@@ -185,36 +299,72 @@ export default function AdminTelegramPage() {
             },
             {
                 id: "actions",
-                header: "",
-                cell: ({ row }) => (
-                    <div className="flex gap-1">
-                        {row.original.telegram_url ? (
-                            <Button variant="ghost" size="sm" asChild>
-                                <a
-                                    href={row.original.telegram_url!}
-                                    target="_blank"
-                                    rel="noreferrer"
+                header: "Actions",
+                enableSorting: false,
+                cell: ({ row }) => {
+                    const item = row.original
+                    const busy = busyRowId === item.id
+                    return (
+                        <DropdownMenu>
+                            <DropdownMenuTrigger asChild>
+                                <Button variant="outline" size="sm" disabled={busy}>
+                                    {busy ? (
+                                        <Loader2 className="h-4 w-4 animate-spin" />
+                                    ) : (
+                                        <MoreHorizontal className="h-4 w-4" />
+                                    )}
+                                </Button>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent align="end">
+                                {item.telegram_url ? (
+                                    <DropdownMenuItem asChild>
+                                        <a
+                                            href={item.telegram_url}
+                                            target="_blank"
+                                            rel="noreferrer"
+                                        >
+                                            <ExternalLink className="mr-2 h-4 w-4" />
+                                            Open in Telegram
+                                        </a>
+                                    </DropdownMenuItem>
+                                ) : null}
+                                {item.document_id ? (
+                                    <>
+                                        <DropdownMenuItem
+                                            onClick={() => openReview(item.document_id!)}
+                                        >
+                                            <Eye className="mr-2 h-4 w-4" />
+                                            Review document
+                                        </DropdownMenuItem>
+                                        <DropdownMenuItem
+                                            onClick={() => void handleReingest(item, false)}
+                                        >
+                                            <RotateCcw className="mr-2 h-4 w-4" />
+                                            Re-ingest
+                                        </DropdownMenuItem>
+                                        <DropdownMenuItem
+                                            onClick={() => void handleReingest(item, true)}
+                                        >
+                                            <RotateCcw className="mr-2 h-4 w-4" />
+                                            Force re-ingest
+                                        </DropdownMenuItem>
+                                    </>
+                                ) : null}
+                                <DropdownMenuSeparator />
+                                <DropdownMenuItem
+                                    className="text-destructive focus:text-destructive"
+                                    onClick={() => void handleRemove(item)}
                                 >
-                                    <ExternalLink className="h-3.5 w-3.5" />
-                                </a>
-                            </Button>
-                        ) : null}
-                        {row.original.document_id ? (
-                            <Button
-                                variant="outline"
-                                size="sm"
-                                className="gap-1"
-                                onClick={() => openReview(row.original.document_id!)}
-                            >
-                                <Eye className="h-3.5 w-3.5" />
-                                Review
-                            </Button>
-                        ) : null}
-                    </div>
-                ),
+                                    <Trash2 className="mr-2 h-4 w-4" />
+                                    Remove
+                                </DropdownMenuItem>
+                            </DropdownMenuContent>
+                        </DropdownMenu>
+                    )
+                },
             },
         ],
-        [openReview]
+        [busyRowId, openReview, handleReingest, handleRemove]
     )
 
     const credsOk = config?.api_configured && config?.session_configured
@@ -225,9 +375,9 @@ export default function AdminTelegramPage() {
                 <div>
                     <h1 className="text-3xl font-bold tracking-tight">Telegram mining</h1>
                     <p className="text-muted-foreground max-w-2xl">
-                        Scrape <strong>@morwestaa</strong> (text, PDF, PPTX) via Telethon. Uses MTProto —
-                        not the Bot API — so channel history back to the configured date can be ingested
-                        into the knowledge base.
+                        Scrape <strong>@morwestaa</strong> for text, PDF, PPTX, and images. Before a
+                        full re-scrape with new logic, use <strong>Clear tracked posts</strong> so
+                        messages are not skipped as unchanged.
                     </p>
                 </div>
                 <Button
@@ -250,19 +400,9 @@ export default function AdminTelegramPage() {
                             Setup required
                         </CardTitle>
                         <CardDescription className="text-amber-900/80 dark:text-amber-100/80">
-                            Add <code className="text-xs">TELEGRAM_API_ID</code>,{" "}
-                            <code className="text-xs">TELEGRAM_API_HASH</code> (from{" "}
-                            <a
-                                href="https://my.telegram.org/apps"
-                                className="underline"
-                                target="_blank"
-                                rel="noreferrer"
-                            >
-                                my.telegram.org
-                            </a>
-                            ) and <code className="text-xs">TELEGRAM_SESSION_STRING</code> from{" "}
-                            <code className="text-xs">uv run python scripts/telegram_gen_session.py</code>
-                            . The Telegram account must be able to read @morwestaa.
+                            Configure <code className="text-xs">TELEGRAM_API_ID</code>,{" "}
+                            <code className="text-xs">TELEGRAM_API_HASH</code>, and{" "}
+                            <code className="text-xs">TELEGRAM_SESSION_STRING</code> (see README).
                         </CardDescription>
                     </CardHeader>
                 </Card>
@@ -270,7 +410,7 @@ export default function AdminTelegramPage() {
 
             {error ? <p className="text-sm text-destructive">{error}</p> : null}
             {lastStats ? (
-                <p className="text-sm text-muted-foreground">Last run: {lastStats}</p>
+                <p className="text-sm text-muted-foreground">{lastStats}</p>
             ) : null}
 
             <div className="grid gap-6 lg:grid-cols-2">
@@ -331,6 +471,19 @@ export default function AdminTelegramPage() {
                                 )}
                                 Run scrape
                             </Button>
+                            <Button
+                                size="sm"
+                                variant="destructive"
+                                disabled={isClearing}
+                                onClick={() => void handleClearAll()}
+                            >
+                                {isClearing ? (
+                                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                                ) : (
+                                    <Trash2 className="mr-2 h-4 w-4" />
+                                )}
+                                Clear tracked posts
+                            </Button>
                         </div>
                     </CardContent>
                 </Card>
@@ -358,9 +511,6 @@ export default function AdminTelegramPage() {
                                             {r.stats.documents_inserted}
                                         </p>
                                     ) : null}
-                                    {r.error_message ? (
-                                        <p className="mt-1 text-destructive">{r.error_message}</p>
-                                    ) : null}
                                 </div>
                             ))
                         )}
@@ -372,10 +522,7 @@ export default function AdminTelegramPage() {
                 <CardHeader>
                     <CardTitle>Scraped messages</CardTitle>
                     <CardDescription>
-                        {total} tracked posts ·{" "}
-                        <Link href={`/${locale}/admin/documents`} className="text-primary underline">
-                            all documents
-                        </Link>
+                        {total} tracked rows (server) · click column headers to sort
                     </CardDescription>
                 </CardHeader>
                 <CardContent>
@@ -387,6 +534,61 @@ export default function AdminTelegramPage() {
                             data={messages}
                             initialPageSize={20}
                             pageSizeOptions={[20, 50, 100]}
+                            globalFilter={tableSearch}
+                            toolbar={
+                                <>
+                                    <div className="space-y-1">
+                                        <Label className="text-xs">Search preview</Label>
+                                        <Input
+                                            className="h-8 w-[200px]"
+                                            placeholder="Filter preview…"
+                                            value={search}
+                                            onChange={(e) => setSearch(e.target.value)}
+                                        />
+                                    </div>
+                                    <div className="space-y-1">
+                                        <Label className="text-xs">Table search</Label>
+                                        <Input
+                                            className="h-8 w-[160px]"
+                                            placeholder="Quick filter…"
+                                            value={tableSearch}
+                                            onChange={(e) => setTableSearch(e.target.value)}
+                                        />
+                                    </div>
+                                    <div className="space-y-1">
+                                        <Label className="text-xs">Type</Label>
+                                        <Select value={filterType} onValueChange={setFilterType}>
+                                            <SelectTrigger className="h-8 w-[130px]">
+                                                <SelectValue />
+                                            </SelectTrigger>
+                                            <SelectContent>
+                                                <SelectItem value={TYPE_FILTER_ALL}>All</SelectItem>
+                                                <SelectItem value="text">text</SelectItem>
+                                                <SelectItem value="image">image</SelectItem>
+                                                <SelectItem value="pdf">pdf</SelectItem>
+                                                <SelectItem value="pptx">pptx</SelectItem>
+                                                <SelectItem value="video">video</SelectItem>
+                                                <SelectItem value="unsupported">unsupported</SelectItem>
+                                            </SelectContent>
+                                        </Select>
+                                    </div>
+                                    <div className="space-y-1">
+                                        <Label className="text-xs">Ingest</Label>
+                                        <Select value={filterIngest} onValueChange={setFilterIngest}>
+                                            <SelectTrigger className="h-8 w-[140px]">
+                                                <SelectValue />
+                                            </SelectTrigger>
+                                            <SelectContent>
+                                                <SelectItem value={INGEST_FILTER_ALL}>All</SelectItem>
+                                                <SelectItem value="indexed">indexed</SelectItem>
+                                                <SelectItem value="manual">needs review</SelectItem>
+                                                <SelectItem value="failed">failed</SelectItem>
+                                                <SelectItem value="none">not indexed</SelectItem>
+                                            </SelectContent>
+                                        </Select>
+                                    </div>
+                                </>
+                            }
                         />
                     )}
                 </CardContent>

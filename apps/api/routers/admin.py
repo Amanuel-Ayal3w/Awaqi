@@ -41,8 +41,11 @@ from apps.api.telegram_service import (
     execute_telegram_scrape_run,
     get_last_telegram_run,
     get_telegram_settings,
+    clear_telegram_messages,
+    delete_telegram_message,
     list_telegram_messages,
     list_telegram_runs,
+    reingest_telegram_message,
     update_telegram_settings,
 )
 from apps.api.schemas import (
@@ -63,6 +66,7 @@ from apps.api.schemas import (
     AdminSystemHealth,
     AdminTelegramConfig,
     AdminTelegramConfigPatch,
+    AdminTelegramClearResult,
     AdminTelegramMessageItem,
     AdminTelegramMessageList,
     AdminTelegramRunItem,
@@ -793,19 +797,35 @@ async def telegram_runs(
 
 @router.get("/admin/telegram/messages", response_model=AdminTelegramMessageList)
 async def telegram_messages(
-    limit: int = Query(50, ge=1, le=200),
+    limit: int = Query(50, ge=1, le=500),
     offset: int = Query(0, ge=0),
     channel: str | None = Query(None),
+    message_type: str | None = Query(None),
+    document_status: str | None = Query(None),
+    ingest_filter: str | None = Query(
+        None,
+        description="indexed | failed | manual | none",
+    ),
+    search: str | None = Query(None),
     current_user: BaUser = Depends(get_current_admin),
 ):
     _require_superadmin(current_user)
-    rows, total = await list_telegram_messages(limit=limit, offset=offset, channel=channel)
+    rows, total = await list_telegram_messages(
+        limit=limit,
+        offset=offset,
+        channel=channel,
+        message_type=message_type,
+        document_status=document_status,
+        ingest_filter=ingest_filter,
+        search=search,
+    )
     return AdminTelegramMessageList(
         messages=[
             AdminTelegramMessageItem(
                 id=str(msg.id),
                 channel_username=msg.channel_username,
                 message_id=int(msg.message_id),
+                content_part=msg.content_part,
                 posted_at=msg.posted_at.isoformat(),
                 message_type=msg.message_type,
                 text_preview=msg.text_preview,
@@ -821,6 +841,60 @@ async def telegram_messages(
         ],
         total=total,
     )
+
+
+@router.delete("/admin/telegram/messages/clear", response_model=AdminTelegramClearResult)
+async def telegram_messages_clear(
+    channel: str | None = Query(None),
+    delete_documents: bool = Query(
+        True,
+        description="Also delete linked documents (and chunks) sourced from Telegram.",
+    ),
+    current_user: BaUser = Depends(get_current_admin),
+):
+    _require_superadmin(current_user)
+    deleted = await clear_telegram_messages(
+        channel=channel,
+        delete_linked_documents=delete_documents,
+    )
+    return AdminTelegramClearResult(deleted=deleted)
+
+
+@router.delete("/admin/telegram/messages/{row_id}")
+async def telegram_message_delete(
+    row_id: str,
+    delete_document: bool = Query(True),
+    current_user: BaUser = Depends(get_current_admin),
+):
+    _require_superadmin(current_user)
+    try:
+        uid = uuid.UUID(row_id)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail="Invalid row id") from e
+    ok = await delete_telegram_message(uid, delete_linked_document=delete_document)
+    if not ok:
+        raise HTTPException(status_code=404, detail="Not found")
+    return {"status": "ok"}
+
+
+@router.post("/admin/telegram/messages/{row_id}/reingest")
+async def telegram_message_reingest(
+    row_id: str,
+    force_index: bool = Query(False),
+    current_user: BaUser = Depends(get_current_admin),
+):
+    _require_superadmin(current_user)
+    try:
+        uid = uuid.UUID(row_id)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail="Invalid row id") from e
+    try:
+        status = await reingest_telegram_message(uid, force_index=force_index)
+    except LookupError:
+        raise HTTPException(status_code=404, detail="Not found")
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    return {"status": status}
 
 
 @router.get("/admin/users", response_model=AdminUserList)

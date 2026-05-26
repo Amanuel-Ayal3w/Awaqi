@@ -7,10 +7,15 @@ import os
 from dataclasses import dataclass
 from datetime import date, datetime, timezone
 
+import uuid
+
+from ai_engine.ingest import ingest_bytes_for_document
+from ai_engine.scraper.storage import delete_storage_file, guess_media_type, read_document_file
 from ai_engine.scraper.telegram_scraper import run_telegram_scrape_cycle
 from database.db import AsyncSessionLocal
+from database.models.document import Document, DocumentChunk, DocumentStatus
 from database.models.telegram import TelegramMessage, TelegramScrapeRun, TelegramScraperConfig
-from sqlalchemy import func, select
+from sqlalchemy import delete, func, or_, select
 
 logger = logging.getLogger(__name__)
 
@@ -161,6 +166,7 @@ async def execute_telegram_scrape_run(trigger: str) -> dict[str, int]:
         "text_posts": 0,
         "pdf_posts": 0,
         "pptx_posts": 0,
+        "image_posts": 0,
         "unsupported": 0,
     }
     error_message: str | None = None
@@ -217,29 +223,155 @@ async def list_telegram_messages(
     limit: int = 50,
     offset: int = 0,
     channel: str | None = None,
+    message_type: str | None = None,
+    document_status: str | None = None,
+    ingest_filter: str | None = None,
+    search: str | None = None,
 ) -> tuple[list[tuple[TelegramMessage, str | None]], int]:
     """Return (message, document_status) rows."""
-    from database.models.document import Document
-
     async with AsyncSessionLocal() as db:
         filters = []
         if channel:
             filters.append(TelegramMessage.channel_username == channel.lstrip("@"))
+        if message_type:
+            filters.append(TelegramMessage.message_type == message_type)
+        if search and search.strip():
+            q = f"%{search.strip()}%"
+            filters.append(
+                or_(
+                    TelegramMessage.text_preview.ilike(q),
+                    TelegramMessage.file_name.ilike(q),
+                )
+            )
+        if ingest_filter == "none":
+            filters.append(TelegramMessage.document_id.is_(None))
+        elif ingest_filter == "indexed":
+            filters.append(Document.status == DocumentStatus.INDEXED.value)
+        elif ingest_filter == "failed":
+            filters.append(Document.status == DocumentStatus.FAILED.value)
+        elif ingest_filter == "manual":
+            filters.append(Document.status == DocumentStatus.REQUIRES_MANUAL_REVIEW.value)
+        elif document_status:
+            filters.append(Document.status == document_status)
 
-        count_stmt = select(func.count(TelegramMessage.id))
+        base = select(TelegramMessage, Document.status).outerjoin(
+            Document, TelegramMessage.document_id == Document.id
+        )
+        if filters:
+            base = base.where(*filters)
+
+        count_stmt = select(func.count(TelegramMessage.id)).select_from(TelegramMessage)
+        count_stmt = count_stmt.outerjoin(
+            Document, TelegramMessage.document_id == Document.id
+        )
         if filters:
             count_stmt = count_stmt.where(*filters)
         total = int((await db.execute(count_stmt)).scalar_one())
 
-        stmt = (
-            select(TelegramMessage, Document.status)
-            .outerjoin(Document, TelegramMessage.document_id == Document.id)
-            .order_by(TelegramMessage.posted_at.desc())
-            .offset(offset)
-            .limit(limit)
-        )
-        if filters:
-            stmt = stmt.where(*filters)
+        stmt = base.order_by(TelegramMessage.posted_at.desc()).offset(offset).limit(limit)
         result = await db.execute(stmt)
         rows = [(msg, str(status) if status is not None else None) for msg, status in result.all()]
         return rows, total
+
+
+async def get_telegram_message_row(
+    message_row_id: uuid.UUID,
+) -> tuple[TelegramMessage, str | None] | None:
+    async with AsyncSessionLocal() as db:
+        result = await db.execute(
+            select(TelegramMessage, Document.status)
+            .outerjoin(Document, TelegramMessage.document_id == Document.id)
+            .where(TelegramMessage.id == message_row_id)
+        )
+        row = result.one_or_none()
+        if row is None:
+            return None
+        msg, status = row
+        return msg, str(status) if status is not None else None
+
+
+async def _delete_document_full(db, doc: Document) -> None:
+    delete_storage_file(doc.storage_path)
+    await db.execute(delete(DocumentChunk).where(DocumentChunk.document_id == doc.id))
+    await db.delete(doc)
+
+
+async def delete_telegram_message(
+    message_row_id: uuid.UUID,
+    *,
+    delete_linked_document: bool = True,
+) -> bool:
+    async with AsyncSessionLocal() as db:
+        result = await db.execute(
+            select(TelegramMessage).where(TelegramMessage.id == message_row_id)
+        )
+        msg = result.scalar_one_or_none()
+        if msg is None:
+            return False
+        doc_id = msg.document_id
+        await db.delete(msg)
+        if delete_linked_document and doc_id:
+            doc = await db.get(Document, doc_id)
+            if doc is not None:
+                await _delete_document_full(db, doc)
+        await db.commit()
+        return True
+
+
+async def clear_telegram_messages(
+    *,
+    channel: str | None = None,
+    delete_linked_documents: bool = True,
+) -> int:
+    """Remove tracked Telegram rows (and optionally linked documents) so scrape can re-run."""
+    async with AsyncSessionLocal() as db:
+        q = select(TelegramMessage)
+        if channel:
+            q = q.where(TelegramMessage.channel_username == channel.lstrip("@"))
+        result = await db.execute(q)
+        messages = list(result.scalars().all())
+        doc_ids = {m.document_id for m in messages if m.document_id}
+        for msg in messages:
+            await db.delete(msg)
+        if delete_linked_documents:
+            for doc_id in doc_ids:
+                doc = await db.get(Document, doc_id)
+                if doc is not None and doc.source_system == "telegram":
+                    await _delete_document_full(db, doc)
+        await db.commit()
+        return len(messages)
+
+
+async def reingest_telegram_message(
+    message_row_id: uuid.UUID,
+    *,
+    force_index: bool = False,
+) -> str:
+    async with AsyncSessionLocal() as db:
+        result = await db.execute(
+            select(TelegramMessage).where(TelegramMessage.id == message_row_id)
+        )
+        msg = result.scalar_one_or_none()
+        if msg is None:
+            raise LookupError("not_found")
+        if not msg.document_id:
+            raise ValueError("no_linked_document")
+        doc = await db.get(Document, msg.document_id)
+        if doc is None:
+            raise ValueError("document_missing")
+        file_bytes = read_document_file(doc.storage_path)
+        if not file_bytes:
+            raise ValueError("no_stored_file")
+        mime = guess_media_type(doc.storage_path)
+        filename = doc.storage_path or f"{doc.id}.bin"
+        await ingest_bytes_for_document(
+            db,
+            doc,
+            file_bytes,
+            mime_type=mime,
+            filename=filename,
+            genai_client=None,
+            force_index=force_index,
+        )
+        await db.refresh(doc)
+        return str(getattr(doc.status, "value", doc.status))
