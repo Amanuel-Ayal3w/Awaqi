@@ -115,7 +115,7 @@ class Document(Base):
         return f"<Document id={self.id} title={self.title!r} status={self.status}>"
 
 
-EMBEDDING_DIM = 1024
+EMBEDDING_DIM = 1536  # gemini-embedding-2 with output_dimensionality=1536
 
 
 class DocumentChunk(Base):
