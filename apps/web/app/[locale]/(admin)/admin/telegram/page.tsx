@@ -97,8 +97,8 @@ export default function AdminTelegramPage() {
             const s = result.stats
             setLastStats(
                 `seen ${s.messages_seen}, +${s.documents_inserted} docs, ` +
-                    `${s.pdf_posts} pdf, ${s.pptx_posts} pptx, ${s.text_posts} text, ` +
-                    `${s.errors} errors`
+                    `${s.text_posts} text, ${s.pdf_posts} pdf, ${s.pptx_posts} pptx, ` +
+                    `${s.image_posts} images, ${s.errors} errors`
             )
             await loadAll()
         } catch (err: unknown) {
@@ -129,11 +129,20 @@ export default function AdminTelegramPage() {
             {
                 accessorKey: "message_type",
                 header: "Type",
-                cell: ({ row }) => (
-                    <Badge variant="outline" className="font-mono text-[10px] uppercase">
-                        {row.getValue("message_type") as string}
-                    </Badge>
-                ),
+                cell: ({ row }) => {
+                    const t = row.getValue("message_type") as string
+                    const skip = row.original.skip_reason
+                    return (
+                        <div className="flex flex-col gap-0.5">
+                            <Badge variant="outline" className="w-fit font-mono text-[10px] uppercase">
+                                {t}
+                            </Badge>
+                            {skip === "not_indexed" ? (
+                                <span className="text-[10px] text-muted-foreground">not indexed</span>
+                            ) : null}
+                        </div>
+                    )
+                },
             },
             {
                 accessorKey: "text_preview",

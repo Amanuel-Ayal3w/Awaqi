@@ -700,6 +700,7 @@ def _telegram_stats_from_dict(raw: dict | None) -> AdminTelegramScrapeStats:
         text_posts=int(raw.get("text_posts", 0)),
         pdf_posts=int(raw.get("pdf_posts", 0)),
         pptx_posts=int(raw.get("pptx_posts", 0)),
+        image_posts=int(raw.get("image_posts", 0)),
         unsupported=int(raw.get("unsupported", 0)),
     )
 

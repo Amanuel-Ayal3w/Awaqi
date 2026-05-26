@@ -84,23 +84,15 @@ def resolve_ocr_langs(requested: str | None = None) -> str:
     return "+".join(resolved)
 
 
-def _ocr_page(pdf_page: fitz.Page) -> tuple[str, float]:
-    """Render page and OCR with Tesseract; return (text, mean_confidence 0..1)."""
+def ocr_pil_image(img: "Image.Image") -> tuple[str, float]:
+    """Run Tesseract on a PIL image; return (text, mean_confidence 0..1)."""
     import pytesseract
     from PIL import Image
 
-    lang = resolve_ocr_langs()
-    scale = max(1.5, OCR_RENDER_SCALE)
-    mat = fitz.Matrix(scale, scale)
-    pix = pdf_page.get_pixmap(matrix=mat, alpha=False)
-    mode = "RGB" if pix.n == 3 else "RGBA"
-    img = Image.frombytes(mode, (pix.width, pix.height), pix.samples)
-    if mode == "RGBA":
+    if img.mode != "RGB":
         img = img.convert("RGB")
-
-    data = pytesseract.image_to_data(
-        img, lang=lang, output_type=pytesseract.Output.DICT
-    )
+    lang = resolve_ocr_langs()
+    data = pytesseract.image_to_data(img, lang=lang, output_type=pytesseract.Output.DICT)
     confs: list[float] = []
     words: list[str] = []
     for i, conf in enumerate(data.get("conf", [])):
@@ -114,10 +106,32 @@ def _ocr_page(pdf_page: fitz.Page) -> tuple[str, float]:
         w = (data.get("text") or [""])[i]
         if w and w.strip():
             words.append(w)
-
     text = " ".join(words).strip()
     mean_conf = float(sum(confs) / len(confs)) if confs else 0.0
     return text, mean_conf
+
+
+def ocr_image_bytes(data: bytes) -> tuple[str, float]:
+    """OCR raw image bytes (JPEG/PNG/WebP)."""
+    from PIL import Image
+
+    img = Image.open(BytesIO(data))
+    return ocr_pil_image(img)
+
+
+def _ocr_page(pdf_page: fitz.Page) -> tuple[str, float]:
+    """Render page and OCR with Tesseract; return (text, mean_confidence 0..1)."""
+    from PIL import Image
+
+    scale = max(1.5, OCR_RENDER_SCALE)
+    mat = fitz.Matrix(scale, scale)
+    pix = pdf_page.get_pixmap(matrix=mat, alpha=False)
+    mode = "RGB" if pix.n == 3 else "RGBA"
+    img = Image.frombytes(mode, (pix.width, pix.height), pix.samples)
+    if mode == "RGBA":
+        img = img.convert("RGB")
+
+    return ocr_pil_image(img)
 
 
 def _extract_pdf_native(pdf_bytes: bytes) -> ExtractionOutcome:
@@ -231,6 +245,46 @@ def _extract_plain_text(data: bytes) -> ExtractionOutcome:
     return ExtractionOutcome(pages=pages, requires_manual_review=False)
 
 
+def _extract_image(data: bytes) -> ExtractionOutcome:
+    """OCR a single image (Telegram photos, scanned pages as PNG/JPEG)."""
+    try:
+        ocr_text, ocr_mean = ocr_image_bytes(data)
+    except Exception:
+        logger.exception("image_ocr_failed")
+        return ExtractionOutcome(
+            pages=[],
+            requires_manual_review=False,
+            review_reason="empty_extract",
+        )
+    ocr_text = normalize_unicode_nfc(ocr_text)
+    if not ocr_text.strip():
+        return ExtractionOutcome(
+            pages=[],
+            requires_manual_review=False,
+            review_reason="empty_extract",
+        )
+    review_reason: str | None = None
+    if is_corrupt_extracted_text(ocr_text):
+        review_reason = "poor_text_quality"
+    elif ocr_mean < OCR_CONFIDENCE_FAIL_THRESHOLD:
+        review_reason = "low_ocr_confidence"
+    pages = [
+        PageText(
+            page_number=1,
+            text=ocr_text,
+            extraction_mode="ocr",
+            ocr_mean_confidence=ocr_mean,
+        )
+    ]
+    if review_reason:
+        return ExtractionOutcome(
+            pages=pages,
+            requires_manual_review=True,
+            review_reason=review_reason,
+        )
+    return ExtractionOutcome(pages=pages, requires_manual_review=False)
+
+
 def _extract_pptx(data: bytes) -> ExtractionOutcome:
     """Extract slide text from OOXML presentations."""
     try:
@@ -334,6 +388,9 @@ async def extract_bytes(
         "application/vnd.ms-powerpoint",
     ) or name.endswith(".pptx"):
         return await asyncio.to_thread(_extract_pptx, data)
+
+    if mt.startswith("image/") or name.endswith((".jpg", ".jpeg", ".png", ".webp")):
+        return await asyncio.to_thread(_extract_image, data)
 
     if mt == "application/pdf" or name.endswith(".pdf"):
         if INGEST_EXTRACTOR == "gemini":

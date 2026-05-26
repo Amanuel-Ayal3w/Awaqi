@@ -179,6 +179,7 @@ export interface AdminTelegramScrapeStats {
     text_posts: number;
     pdf_posts: number;
     pptx_posts: number;
+    image_posts: number;
     unsupported: number;
 }
 

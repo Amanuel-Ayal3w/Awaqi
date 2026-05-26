@@ -5,7 +5,9 @@ from datetime import datetime, timezone
 from ai_engine.scraper.telegram_parse import (
     build_title,
     classify_filename,
+    classify_image,
     external_id,
+    is_substantial_text,
     normalize_channel,
     telegram_post_url,
 )
@@ -16,8 +18,19 @@ def test_normalize_channel():
 
 
 def test_external_id_and_url():
-    assert external_id("morwestaa", 42) == "morwestaa:42"
+    assert external_id("morwestaa", 42, "text") == "morwestaa:42:text"
     assert telegram_post_url("morwestaa", 42) == "https://t.me/morwestaa/42"
+
+
+def test_classify_image():
+    spec = classify_image("image/jpeg", "photo.jpg")
+    assert spec is not None
+    assert spec.content_part == "image"
+
+
+def test_is_substantial_text():
+    assert is_substantial_text("https://youtu.be/abc12345678")
+    assert not is_substantial_text("hi")
 
 
 def test_classify_pdf():

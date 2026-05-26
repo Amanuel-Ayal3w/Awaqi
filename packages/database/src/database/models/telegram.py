@@ -66,11 +66,13 @@ class TelegramMessage(Base):
     """One scraped Telegram channel post (text or attachment)."""
 
     __tablename__ = "telegram_messages"
+    content_part: Mapped[str] = mapped_column(String(32), nullable=False, default="text")
     __table_args__ = (
         UniqueConstraint(
             "channel_username",
             "message_id",
-            name="uq_telegram_messages_channel_msg",
+            "content_part",
+            name="uq_telegram_messages_channel_msg_part",
         ),
     )
 

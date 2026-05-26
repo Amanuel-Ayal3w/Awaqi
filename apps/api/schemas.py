@@ -219,6 +219,7 @@ class AdminTelegramScrapeStats(BaseModel):
     text_posts: int = 0
     pdf_posts: int = 0
     pptx_posts: int = 0
+    image_posts: int = 0
     unsupported: int = 0
 
 
