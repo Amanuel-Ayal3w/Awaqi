@@ -1,7 +1,9 @@
 from .auth import BaSession, BaUser
 from .customer import CuSession, CuUser
 from .document import Document, DocumentChunk, DocumentStatus, ProcessingStage
+from .scraper import ScraperConfig, ScraperRun
 from .session import ChatSession, Feedback, Message
+from .telegram import TelegramMessage, TelegramScrapeRun, TelegramScraperConfig
 
 __all__ = [
     "BaUser",
@@ -15,4 +17,9 @@ __all__ = [
     "ChatSession",
     "Message",
     "Feedback",
+    "ScraperConfig",
+    "ScraperRun",
+    "TelegramScraperConfig",
+    "TelegramScrapeRun",
+    "TelegramMessage",
 ]

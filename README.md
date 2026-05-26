@@ -49,7 +49,7 @@ export BETTER_AUTH_SECRET="$(openssl rand -base64 32)"
 docker-compose -f docker/docker-compose.yml up --build
 ```
 
-- **Frontend**: http://localhost:3000
+- **Frontend**: http://localhost:3100
 - **API**: http://localhost:8000/docs
 - **Database**: localhost:5432
 

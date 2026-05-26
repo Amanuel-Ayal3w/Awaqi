@@ -6,7 +6,6 @@ import uuid
 from datetime import datetime, timedelta, timezone
 
 from ai_engine.ingest import ingest_bytes_for_document, ingest_plain_text
-from ai_engine.web_scraper import WebScraper
 from database import get_session, ping_redis
 from database.models.auth import BaUser
 from database.models.customer import CuUser
@@ -20,20 +19,56 @@ from fastapi import (
     File,
     HTTPException,
     Query,
+    Request,
     UploadFile,
     status,
 )
+from fastapi.responses import FileResponse, Response
 from sqlalchemy import func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from apps.api.deps import get_current_admin
+from apps.api.document_preview import build_content_preview, get_document_or_404, load_document_bytes
+from apps.api.scraper_scheduler import apply_scheduler_config, get_next_run_time
+from apps.api.scraper_service import (
+    execute_scrape_run,
+    get_last_scraper_run,
+    get_scraper_settings,
+    list_scraper_runs,
+    update_scraper_settings,
+)
+from apps.api.telegram_service import (
+    execute_telegram_scrape_run,
+    get_last_telegram_run,
+    get_telegram_settings,
+    list_telegram_messages,
+    list_telegram_runs,
+    update_telegram_settings,
+)
 from apps.api.schemas import (
     AdminAnalytics,
+    AdminDocumentContentPreview,
     AdminDocumentDetail,
     AdminDocumentItem,
     AdminDocumentList,
     AdminDocumentPatch,
+    ExtractedPagePreview,
+    AdminScrapeResult,
+    AdminScrapeStats,
+    AdminScraperConfig,
+    AdminScraperConfigPatch,
+    AdminScraperRunItem,
+    AdminScraperRunList,
+    AdminScraperStatus,
     AdminSystemHealth,
+    AdminTelegramConfig,
+    AdminTelegramConfigPatch,
+    AdminTelegramMessageItem,
+    AdminTelegramMessageList,
+    AdminTelegramRunItem,
+    AdminTelegramRunList,
+    AdminTelegramScrapeResult,
+    AdminTelegramScrapeStats,
     AdminUserItem,
     AdminUserList,
     AdminUserPatch,
@@ -54,6 +89,7 @@ ALLOWED_UPLOAD_MIME_TYPES = {
     "text/html",
     "application/xhtml+xml",
     "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    "application/vnd.openxmlformats-officedocument.presentationml.presentation",
     "application/octet-stream",
 }
 ALLOWED_EXTENSIONS = (".pdf", ".txt", ".html", ".htm", ".docx")
@@ -91,6 +127,7 @@ def _document_detail_from_row(
         **it.model_dump(),
         file_hash=doc.file_hash,
         registry_key=doc.registry_key,
+        storage_path=doc.storage_path,
     )
 
 
@@ -161,6 +198,10 @@ async def _sha256_with_size_limit(file: UploadFile) -> str:
 @router.get("/admin/documents", response_model=AdminDocumentList)
 async def list_admin_documents(
     limit: int = 100,
+    offset: int = 0,
+    scraped_only: bool = Query(
+        False, description="When true, only documents with a source_url (scraper)."
+    ),
     uploaded_by: str | None = Query(
         None,
         description="Filter by uploader ba_user UUID (superadmin only).",
@@ -169,12 +210,8 @@ async def list_admin_documents(
     db: AsyncSession = Depends(get_session),
 ):
     safe_limit = max(1, min(limit, 500))
-    stmt = (
-        select(Document, BaUser.email, BaUser.name)
-        .outerjoin(BaUser, Document.uploaded_by_id == BaUser.id)
-        .order_by(Document.created_at.desc())
-        .limit(safe_limit)
-    )
+    safe_offset = max(0, offset)
+    uploader_filter: uuid.UUID | None = None
     if uploaded_by is not None:
         _require_superadmin(current_user)
         try:
@@ -184,6 +221,24 @@ async def list_admin_documents(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="uploaded_by must be a valid UUID",
             )
+
+    count_stmt = select(func.count()).select_from(Document)
+    if scraped_only:
+        count_stmt = count_stmt.where(Document.source_url.isnot(None))
+    if uploader_filter is not None:
+        count_stmt = count_stmt.where(Document.uploaded_by_id == uploader_filter)
+    total = int(await db.scalar(count_stmt) or 0)
+
+    stmt = (
+        select(Document, BaUser.email, BaUser.name)
+        .outerjoin(BaUser, Document.uploaded_by_id == BaUser.id)
+        .order_by(Document.created_at.desc())
+        .offset(safe_offset)
+        .limit(safe_limit)
+    )
+    if scraped_only:
+        stmt = stmt.where(Document.source_url.isnot(None))
+    if uploader_filter is not None:
         stmt = stmt.where(Document.uploaded_by_id == uploader_filter)
 
     result = await db.execute(stmt)
@@ -192,7 +247,8 @@ async def list_admin_documents(
     return AdminDocumentList(
         documents=[
             _document_item_from_row(doc, email, name) for doc, email, name in rows
-        ]
+        ],
+        total=total,
     )
 
 
@@ -346,6 +402,144 @@ async def patch_admin_document(
     return _document_detail_from_row(d2, email, name)
 
 
+@router.get("/admin/documents/{doc_id}/content", response_model=AdminDocumentContentPreview)
+async def get_admin_document_content(
+    doc_id: str,
+    current_user: BaUser = Depends(get_current_admin),
+    db: AsyncSession = Depends(get_session),
+):
+    del current_user
+    try:
+        doc = await get_document_or_404(db, doc_id)
+    except ValueError:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="doc_id must be a valid UUID",
+        )
+    except LookupError:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Not found")
+
+    payload = await build_content_preview(db, doc)
+    return AdminDocumentContentPreview(
+        pages=[ExtractedPagePreview(**p) for p in payload["pages"]],
+        **{k: v for k, v in payload.items() if k != "pages"},
+    )
+
+
+@router.get("/admin/documents/{doc_id}/file")
+async def download_admin_document_file(
+    doc_id: str,
+    current_user: BaUser = Depends(get_current_admin),
+    db: AsyncSession = Depends(get_session),
+):
+    del current_user
+    try:
+        doc = await get_document_or_404(db, doc_id)
+    except ValueError:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="doc_id must be a valid UUID",
+        )
+    except LookupError:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Not found")
+
+    from ai_engine.scraper.storage import document_storage_root, guess_media_type
+
+    if doc.storage_path:
+        path = document_storage_root() / doc.storage_path
+        if path.is_file():
+            media_type = guess_media_type(doc.storage_path)
+            return FileResponse(
+                path,
+                media_type=media_type,
+                filename=doc.storage_path,
+            )
+
+    if not doc.source_url:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="No stored PDF or source URL",
+        )
+
+    import httpx
+
+    from ai_engine.scraper.mor_http import USER_AGENT, mor_http_verify
+
+    async with httpx.AsyncClient(
+        headers={"User-Agent": USER_AGENT},
+        follow_redirects=True,
+        verify=mor_http_verify(),
+        timeout=120.0,
+    ) as client:
+        from ai_engine.scraper.http_retry import fetch_with_retry
+
+        resp = await fetch_with_retry(client, doc.source_url)
+        return Response(
+            content=resp.content,
+            media_type="application/pdf",
+            headers={"Content-Disposition": f'inline; filename="{doc.id}.pdf"'},
+        )
+
+
+@router.post("/admin/documents/{doc_id}/retry-ingest", response_model=DocumentStatus)
+async def retry_admin_document_ingest(
+    doc_id: str,
+    force_index: bool = Query(
+        False,
+        description="When true, index even if OCR confidence is below threshold.",
+    ),
+    current_user: BaUser = Depends(get_current_admin),
+    db: AsyncSession = Depends(get_session),
+):
+    del current_user
+    try:
+        doc = await get_document_or_404(db, doc_id)
+    except ValueError:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="doc_id must be a valid UUID",
+        )
+    except LookupError:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Not found")
+
+    from ai_engine.scraper.storage import guess_media_type
+
+    file_bytes = await load_document_bytes(doc)
+    if not file_bytes:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="No stored file on disk for this document",
+        )
+
+    mime = guess_media_type(doc.storage_path)
+    filename = doc.storage_path or f"{doc.id}.bin"
+
+    try:
+        n = await ingest_bytes_for_document(
+            db,
+            doc,
+            file_bytes,
+            mime_type=mime,
+            filename=filename,
+            genai_client=None,
+            force_index=force_index,
+        )
+        logger.info("retry-ingest doc=%s chunks=%d force_index=%s", doc.id, n, force_index)
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e),
+        ) from e
+
+    await db.refresh(doc)
+    return DocumentStatus(
+        doc_id=str(doc.id),
+        status=str(getattr(doc.status, "value", doc.status)),
+        processing_stage=doc.processing_stage,
+        ingest_error=doc.ingest_error,
+    )
+
+
 @router.post("/admin/documents/{doc_id}/ingest-text", response_model=DocumentStatus)
 async def ingest_document_plain_text(
     doc_id: str,
@@ -383,14 +577,249 @@ async def ingest_document_plain_text(
     )
 
 
-@router.post("/admin/scrape")
+def _scrape_stats_from_dict(raw: dict | None) -> AdminScrapeStats:
+    if not raw:
+        return AdminScrapeStats()
+    return AdminScrapeStats(
+        discovered=int(raw.get("discovered", 0)),
+        inserted=int(raw.get("inserted", 0)),
+        skipped=int(raw.get("skipped", 0)),
+        errors=int(raw.get("errors", 0)),
+    )
+
+
+def _run_to_item(run) -> AdminScraperRunItem:
+    return AdminScraperRunItem(
+        id=str(run.id),
+        trigger=str(run.trigger),
+        status=str(run.status),
+        started_at=run.started_at.isoformat(),
+        finished_at=run.finished_at.isoformat() if run.finished_at else None,
+        stats=_scrape_stats_from_dict(run.stats if isinstance(run.stats, dict) else None),
+        error_message=run.error_message,
+    )
+
+
+@router.post("/admin/scrape", response_model=AdminScrapeResult)
 async def trigger_scrape(
+    request: Request,
     current_user: BaUser = Depends(get_current_admin),
 ):
     """Run one MoR scrape cycle immediately (AWA-11)."""
     _require_superadmin(current_user)
-    stats = await WebScraper().scan_for_updates()
-    return {"status": "ok", "stats": stats}
+    stats = await execute_scrape_run(trigger="manual")
+    return AdminScrapeResult(status="ok", stats=_scrape_stats_from_dict(stats))
+
+
+@router.get("/admin/scraper/status", response_model=AdminScraperStatus)
+async def scraper_status(
+    request: Request,
+    current_user: BaUser = Depends(get_current_admin),
+):
+    _require_superadmin(current_user)
+    settings = await get_scraper_settings()
+    last = await get_last_scraper_run()
+    return AdminScraperStatus(
+        scheduler_enabled=settings.scheduler_enabled,
+        cron_hour=settings.cron_hour,
+        cron_minute=settings.cron_minute,
+        timezone="Africa/Addis_Ababa",
+        next_run_time=get_next_run_time(request.app),
+        last_run=_run_to_item(last) if last else None,
+    )
+
+
+@router.get("/admin/scraper/runs", response_model=AdminScraperRunList)
+async def scraper_runs(
+    limit: int = Query(20, ge=1, le=100),
+    current_user: BaUser = Depends(get_current_admin),
+):
+    _require_superadmin(current_user)
+    runs = await list_scraper_runs(limit=limit)
+    return AdminScraperRunList(runs=[_run_to_item(r) for r in runs])
+
+
+@router.get("/admin/scraper/config", response_model=AdminScraperConfig)
+async def scraper_config_get(
+    current_user: BaUser = Depends(get_current_admin),
+):
+    _require_superadmin(current_user)
+    s = await get_scraper_settings()
+    return AdminScraperConfig(
+        seed_urls=s.seed_urls,
+        scheduler_enabled=s.scheduler_enabled,
+        cron_hour=s.cron_hour,
+        cron_minute=s.cron_minute,
+        max_links=s.max_links,
+        storage_dir=s.storage_dir,
+        api_base_url=s.api_base_url,
+    )
+
+
+@router.patch("/admin/scraper/config", response_model=AdminScraperConfig)
+async def scraper_config_patch(
+    request: Request,
+    body: AdminScraperConfigPatch,
+    current_user: BaUser = Depends(get_current_admin),
+):
+    _require_superadmin(current_user)
+    if body.cron_hour is not None and not (0 <= body.cron_hour <= 23):
+        raise HTTPException(status_code=400, detail="cron_hour must be 0-23")
+    if body.cron_minute is not None and not (0 <= body.cron_minute <= 59):
+        raise HTTPException(status_code=400, detail="cron_minute must be 0-59")
+    if body.max_links is not None and body.max_links < 1:
+        raise HTTPException(status_code=400, detail="max_links must be >= 1")
+
+    s = await update_scraper_settings(
+        seed_urls=body.seed_urls,
+        scheduler_enabled=body.scheduler_enabled,
+        cron_hour=body.cron_hour,
+        cron_minute=body.cron_minute,
+        max_links=body.max_links,
+    )
+    await apply_scheduler_config(request.app)
+    return AdminScraperConfig(
+        seed_urls=s.seed_urls,
+        scheduler_enabled=s.scheduler_enabled,
+        cron_hour=s.cron_hour,
+        cron_minute=s.cron_minute,
+        max_links=s.max_links,
+        storage_dir=s.storage_dir,
+        api_base_url=s.api_base_url,
+    )
+
+
+def _telegram_stats_from_dict(raw: dict | None) -> AdminTelegramScrapeStats:
+    raw = raw or {}
+    return AdminTelegramScrapeStats(
+        messages_seen=int(raw.get("messages_seen", 0)),
+        messages_skipped=int(raw.get("messages_skipped", 0)),
+        documents_inserted=int(raw.get("documents_inserted", 0)),
+        documents_updated=int(raw.get("documents_updated", 0)),
+        errors=int(raw.get("errors", 0)),
+        text_posts=int(raw.get("text_posts", 0)),
+        pdf_posts=int(raw.get("pdf_posts", 0)),
+        pptx_posts=int(raw.get("pptx_posts", 0)),
+        unsupported=int(raw.get("unsupported", 0)),
+    )
+
+
+def _telegram_run_item(run) -> AdminTelegramRunItem:
+    return AdminTelegramRunItem(
+        id=str(run.id),
+        trigger=run.trigger,
+        status=run.status,
+        started_at=run.started_at.isoformat(),
+        finished_at=run.finished_at.isoformat() if run.finished_at else None,
+        stats=_telegram_stats_from_dict(run.stats if isinstance(run.stats, dict) else None),
+        error_message=run.error_message,
+    )
+
+
+@router.post("/admin/telegram/scrape", response_model=AdminTelegramScrapeResult)
+async def trigger_telegram_scrape(
+    current_user: BaUser = Depends(get_current_admin),
+):
+    _require_superadmin(current_user)
+    stats = await execute_telegram_scrape_run(trigger="manual")
+    return AdminTelegramScrapeResult(status="ok", stats=_telegram_stats_from_dict(stats))
+
+
+@router.get("/admin/telegram/config", response_model=AdminTelegramConfig)
+async def telegram_config_get(
+    current_user: BaUser = Depends(get_current_admin),
+):
+    _require_superadmin(current_user)
+    s = await get_telegram_settings()
+    return AdminTelegramConfig(
+        channel_username=s.channel_username,
+        scrape_since=s.scrape_since.isoformat(),
+        max_messages_per_run=s.max_messages_per_run,
+        scheduler_enabled=s.scheduler_enabled,
+        cron_hour=s.cron_hour,
+        cron_minute=s.cron_minute,
+        api_configured=s.api_configured,
+        session_configured=s.session_configured,
+    )
+
+
+@router.patch("/admin/telegram/config", response_model=AdminTelegramConfig)
+async def telegram_config_patch(
+    body: AdminTelegramConfigPatch,
+    current_user: BaUser = Depends(get_current_admin),
+):
+    _require_superadmin(current_user)
+    from datetime import date as date_type
+
+    scrape_since = None
+    if body.scrape_since is not None:
+        try:
+            scrape_since = date_type.fromisoformat(body.scrape_since[:10])
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail="scrape_since must be YYYY-MM-DD") from e
+    if body.max_messages_per_run is not None and body.max_messages_per_run < 1:
+        raise HTTPException(status_code=400, detail="max_messages_per_run must be >= 1")
+
+    s = await update_telegram_settings(
+        channel_username=body.channel_username,
+        scrape_since=scrape_since,
+        max_messages_per_run=body.max_messages_per_run,
+        scheduler_enabled=body.scheduler_enabled,
+        cron_hour=body.cron_hour,
+        cron_minute=body.cron_minute,
+    )
+    return AdminTelegramConfig(
+        channel_username=s.channel_username,
+        scrape_since=s.scrape_since.isoformat(),
+        max_messages_per_run=s.max_messages_per_run,
+        scheduler_enabled=s.scheduler_enabled,
+        cron_hour=s.cron_hour,
+        cron_minute=s.cron_minute,
+        api_configured=s.api_configured,
+        session_configured=s.session_configured,
+    )
+
+
+@router.get("/admin/telegram/runs", response_model=AdminTelegramRunList)
+async def telegram_runs(
+    limit: int = Query(20, ge=1, le=100),
+    current_user: BaUser = Depends(get_current_admin),
+):
+    _require_superadmin(current_user)
+    runs = await list_telegram_runs(limit=limit)
+    return AdminTelegramRunList(runs=[_telegram_run_item(r) for r in runs])
+
+
+@router.get("/admin/telegram/messages", response_model=AdminTelegramMessageList)
+async def telegram_messages(
+    limit: int = Query(50, ge=1, le=200),
+    offset: int = Query(0, ge=0),
+    channel: str | None = Query(None),
+    current_user: BaUser = Depends(get_current_admin),
+):
+    _require_superadmin(current_user)
+    rows, total = await list_telegram_messages(limit=limit, offset=offset, channel=channel)
+    return AdminTelegramMessageList(
+        messages=[
+            AdminTelegramMessageItem(
+                id=str(msg.id),
+                channel_username=msg.channel_username,
+                message_id=int(msg.message_id),
+                posted_at=msg.posted_at.isoformat(),
+                message_type=msg.message_type,
+                text_preview=msg.text_preview,
+                file_name=msg.file_name,
+                mime_type=msg.mime_type,
+                byte_size=msg.byte_size,
+                telegram_url=msg.telegram_url,
+                document_id=str(msg.document_id) if msg.document_id else None,
+                document_status=doc_status,
+                skip_reason=msg.skip_reason,
+            )
+            for msg, doc_status in rows
+        ],
+        total=total,
+    )
 
 
 @router.get("/admin/users", response_model=AdminUserList)

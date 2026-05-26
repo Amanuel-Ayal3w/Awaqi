@@ -37,7 +37,7 @@ Required env vars before running:
 ```bash
 export BETTER_AUTH_SECRET="$(openssl rand -base64 32)"
 export DATABASE_URL_SYNC="postgresql://user:password@localhost:5432/awaqi_db"
-export NEXT_PUBLIC_APP_URL="http://localhost:3000"
+export NEXT_PUBLIC_APP_URL="http://localhost:3100"
 export NEXT_PUBLIC_API_URL="http://localhost:8000"
 ```
 Then:

@@ -3,10 +3,20 @@ import { authClient } from "@/lib/auth-client";
 import { customerAuthClient } from "@/lib/customer-auth-client";
 import type {
     AdminAnalytics,
+    AdminDocumentContentPreview,
     AdminDocumentDetail,
     AdminDocumentList,
     AdminScrapeResult,
+    AdminScraperConfig,
+    AdminScraperConfigPatch,
+    AdminScraperRunList,
+    AdminScraperStatus,
     AdminSystemHealth,
+    AdminTelegramConfig,
+    AdminTelegramConfigPatch,
+    AdminTelegramMessageList,
+    AdminTelegramRunList,
+    AdminTelegramScrapeResult,
     AdminUserItem,
     AdminUserList,
     ChatMessage,
@@ -139,6 +149,33 @@ export const adminApi = {
         return data;
     },
 
+    getScraperStatus: async (): Promise<AdminScraperStatus> => {
+        const { data } = await apiClient.get<AdminScraperStatus>("/v1/admin/scraper/status");
+        return data;
+    },
+
+    getScraperRuns: async (limit = 20): Promise<AdminScraperRunList> => {
+        const { data } = await apiClient.get<AdminScraperRunList>("/v1/admin/scraper/runs", {
+            params: { limit },
+        });
+        return data;
+    },
+
+    getScraperConfig: async (): Promise<AdminScraperConfig> => {
+        const { data } = await apiClient.get<AdminScraperConfig>("/v1/admin/scraper/config");
+        return data;
+    },
+
+    patchScraperConfig: async (
+        patch: AdminScraperConfigPatch
+    ): Promise<AdminScraperConfig> => {
+        const { data } = await apiClient.patch<AdminScraperConfig>(
+            "/v1/admin/scraper/config",
+            patch
+        );
+        return data;
+    },
+
     getLogs: async (): Promise<LogEntryList> => {
         const { data } = await apiClient.get<LogEntryList>("/v1/admin/logs");
         return data;
@@ -156,16 +193,52 @@ export const adminApi = {
 
     listDocuments: async (options?: {
         limit?: number;
+        offset?: number;
+        scraped_only?: boolean;
         uploaded_by?: string;
     }): Promise<AdminDocumentList> => {
         const params = new URLSearchParams();
         const limit = options?.limit ?? 100;
         params.set("limit", String(limit));
+        if (options?.offset != null) {
+            params.set("offset", String(options.offset));
+        }
+        if (options?.scraped_only) {
+            params.set("scraped_only", "true");
+        }
         if (options?.uploaded_by) {
             params.set("uploaded_by", options.uploaded_by);
         }
         const { data } = await apiClient.get<AdminDocumentList>(
             `/v1/admin/documents?${params.toString()}`
+        );
+        return data;
+    },
+
+    getDocumentContent: async (docId: string): Promise<AdminDocumentContentPreview> => {
+        const { data } = await apiClient.get<AdminDocumentContentPreview>(
+            `/v1/admin/documents/${docId}/content`,
+            { timeout: 300_000 }
+        );
+        return data;
+    },
+
+    fetchDocumentPdfBlob: async (docId: string): Promise<Blob> => {
+        const { data } = await apiClient.get<Blob>(`/v1/admin/documents/${docId}/file`, {
+            responseType: "blob",
+            timeout: 120_000,
+            maxContentLength: 50 * 1024 * 1024,
+        });
+        return data;
+    },
+
+    retryDocumentIngest: async (
+        docId: string,
+        options?: { force_index?: boolean }
+    ): Promise<DocumentStatus> => {
+        const q = options?.force_index ? "?force_index=true" : "";
+        const { data } = await apiClient.post<DocumentStatus>(
+            `/v1/admin/documents/${docId}/retry-ingest${q}`
         );
         return data;
     },
@@ -208,5 +281,49 @@ export const adminApi = {
 
     deleteUser: async (userId: string): Promise<void> => {
         await apiClient.delete(`/v1/admin/users/${userId}`);
+    },
+
+    getTelegramConfig: async (): Promise<AdminTelegramConfig> => {
+        const { data } = await apiClient.get<AdminTelegramConfig>("/v1/admin/telegram/config");
+        return data;
+    },
+
+    patchTelegramConfig: async (
+        body: AdminTelegramConfigPatch
+    ): Promise<AdminTelegramConfig> => {
+        const { data } = await apiClient.patch<AdminTelegramConfig>(
+            "/v1/admin/telegram/config",
+            body
+        );
+        return data;
+    },
+
+    triggerTelegramScrape: async (): Promise<AdminTelegramScrapeResult> => {
+        const { data } = await apiClient.post<AdminTelegramScrapeResult>(
+            "/v1/admin/telegram/scrape"
+        );
+        return data;
+    },
+
+    getTelegramRuns: async (limit = 20): Promise<AdminTelegramRunList> => {
+        const { data } = await apiClient.get<AdminTelegramRunList>(
+            `/v1/admin/telegram/runs?limit=${limit}`
+        );
+        return data;
+    },
+
+    listTelegramMessages: async (options?: {
+        limit?: number;
+        offset?: number;
+        channel?: string;
+    }): Promise<AdminTelegramMessageList> => {
+        const params = new URLSearchParams();
+        params.set("limit", String(options?.limit ?? 50));
+        params.set("offset", String(options?.offset ?? 0));
+        if (options?.channel) params.set("channel", options.channel);
+        const { data } = await apiClient.get<AdminTelegramMessageList>(
+            `/v1/admin/telegram/messages?${params.toString()}`
+        );
+        return data;
     },
 };

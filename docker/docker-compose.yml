@@ -45,7 +45,7 @@ services:
       context: .
       dockerfile: docker/web.Dockerfile
     ports:
-      - "3000:3000"
+      - "3000:3100"
     env_file:
       - .env
     environment:

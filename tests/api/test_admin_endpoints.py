@@ -28,6 +28,7 @@ class TestAdminDocuments:
         assert response.status_code == 200
         data = response.json()
         assert "documents" in data
+        assert "total" in data
         assert isinstance(data["documents"], list)
 
 

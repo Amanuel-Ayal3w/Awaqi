@@ -23,6 +23,7 @@ from google import genai
 
 from ai_engine.extractor import PageText
 from ai_engine.extractor import extract_text as extract_text_gemini
+from ai_engine.text_quality import assess_extracted_text, is_corrupt_extracted_text
 from ai_engine.text_utils import normalize_unicode_nfc
 
 logger = logging.getLogger(__name__)
@@ -31,6 +32,10 @@ INGEST_EXTRACTOR = os.getenv("INGEST_EXTRACTOR", "native").lower()
 MIN_TEXT_CHARS_FOR_NATIVE_PAGE = int(os.getenv("MIN_TEXT_CHARS_PER_PAGE", "40"))
 OCR_LANGS = os.getenv("OCR_LANGS", "eng+amh")
 OCR_CONFIDENCE_FAIL_THRESHOLD = float(os.getenv("OCR_CONFIDENCE_FAIL_THRESHOLD", "0.7"))
+OCR_RENDER_SCALE = float(os.getenv("OCR_RENDER_SCALE", "3.0"))
+
+_tesseract_langs_cache: set[str] | None = None
+_amh_warning_logged = False
 
 
 @dataclass
@@ -46,12 +51,47 @@ def _mean(values: list[float]) -> float | None:
     return sum(values) / len(values)
 
 
+def get_tesseract_languages() -> set[str]:
+    """Installed Tesseract language codes (cached)."""
+    global _tesseract_langs_cache
+    if _tesseract_langs_cache is not None:
+        return _tesseract_langs_cache
+    try:
+        import pytesseract
+
+        _tesseract_langs_cache = set(pytesseract.get_languages(config=""))
+    except Exception:
+        logger.exception("Failed to list Tesseract languages")
+        _tesseract_langs_cache = set()
+    return _tesseract_langs_cache
+
+
+def resolve_ocr_langs(requested: str | None = None) -> str:
+    """Map ``OCR_LANGS`` to installed packs; warn when ``amh`` is missing."""
+    global _amh_warning_logged
+    raw = (requested or OCR_LANGS).strip()
+    parts = [p.strip() for p in raw.split("+") if p.strip()]
+    available = get_tesseract_languages()
+    resolved = [p for p in parts if p in available] or ["eng"]
+    if "amh" in parts and "amh" not in available and not _amh_warning_logged:
+        _amh_warning_logged = True
+        logger.warning(
+            "Tesseract 'amh' traineddata is not installed (have: %s). "
+            "Amharic PDFs will OCR poorly. Install e.g. "
+            "'brew install tesseract-lang' or 'apt install tesseract-ocr-amh'.",
+            sorted(available),
+        )
+    return "+".join(resolved)
+
+
 def _ocr_page(pdf_page: fitz.Page) -> tuple[str, float]:
     """Render page and OCR with Tesseract; return (text, mean_confidence 0..1)."""
     import pytesseract
     from PIL import Image
 
-    mat = fitz.Matrix(2.0, 2.0)
+    lang = resolve_ocr_langs()
+    scale = max(1.5, OCR_RENDER_SCALE)
+    mat = fitz.Matrix(scale, scale)
     pix = pdf_page.get_pixmap(matrix=mat, alpha=False)
     mode = "RGB" if pix.n == 3 else "RGBA"
     img = Image.frombytes(mode, (pix.width, pix.height), pix.samples)
@@ -59,7 +99,7 @@ def _ocr_page(pdf_page: fitz.Page) -> tuple[str, float]:
         img = img.convert("RGB")
 
     data = pytesseract.image_to_data(
-        img, lang=OCR_LANGS, output_type=pytesseract.Output.DICT
+        img, lang=lang, output_type=pytesseract.Output.DICT
     )
     confs: list[float] = []
     words: list[str] = []
@@ -86,11 +126,23 @@ def _extract_pdf_native(pdf_bytes: bytes) -> ExtractionOutcome:
     pages: list[PageText] = []
     ocr_confidences: list[float] = []
 
+    used_corrupt_embedded = False
+    used_poor_ocr = False
+
     try:
         for i in range(len(doc)):
             page = doc[i]
             raw = normalize_unicode_nfc((page.get_text("text") or "").strip())
-            if len(raw) >= MIN_TEXT_CHARS_FOR_NATIVE_PAGE:
+            use_native = len(raw) >= MIN_TEXT_CHARS_FOR_NATIVE_PAGE
+            if use_native and is_corrupt_extracted_text(raw):
+                used_corrupt_embedded = True
+                logger.info(
+                    "Page %d: embedded PDF text looks corrupt; falling back to OCR",
+                    i + 1,
+                )
+                use_native = False
+
+            if use_native:
                 pages.append(
                     PageText(
                         page_number=i + 1,
@@ -104,6 +156,8 @@ def _extract_pdf_native(pdf_bytes: bytes) -> ExtractionOutcome:
             ocr_text, ocr_mean = _ocr_page(page)
             ocr_text = normalize_unicode_nfc(ocr_text)
             ocr_confidences.append(ocr_mean)
+            if is_corrupt_extracted_text(ocr_text):
+                used_poor_ocr = True
             pages.append(
                 PageText(
                     page_number=i + 1,
@@ -122,12 +176,26 @@ def _extract_pdf_native(pdf_bytes: bytes) -> ExtractionOutcome:
             review_reason="empty_extract",
         )
 
+    full_doc_text = "\n".join(p.text for p in pages if p.text.strip())
+    doc_quality = assess_extracted_text(full_doc_text)
+
+    review_reason: str | None = None
     mean_ocr = _mean(ocr_confidences)
-    if mean_ocr is not None and mean_ocr < OCR_CONFIDENCE_FAIL_THRESHOLD:
+
+    if doc_quality.is_likely_corrupt or used_poor_ocr:
+        review_reason = "poor_text_quality"
+    elif used_corrupt_embedded:
+        review_reason = "corrupt_embedded_text"
+    elif mean_ocr is not None and mean_ocr < OCR_CONFIDENCE_FAIL_THRESHOLD:
+        review_reason = "low_ocr_confidence"
+    elif "amh" not in get_tesseract_languages() and doc_quality.ethiopic_ratio < 0.05:
+        review_reason = "amh_traineddata_missing"
+
+    if review_reason:
         return ExtractionOutcome(
             pages=pages,
             requires_manual_review=True,
-            review_reason="low_ocr_confidence",
+            review_reason=review_reason,
         )
 
     return ExtractionOutcome(pages=pages, requires_manual_review=False)
@@ -157,6 +225,48 @@ def _extract_plain_text(data: bytes) -> ExtractionOutcome:
             page_number=1,
             text=text,
             extraction_mode="manual_txt",
+            ocr_mean_confidence=None,
+        )
+    ]
+    return ExtractionOutcome(pages=pages, requires_manual_review=False)
+
+
+def _extract_pptx(data: bytes) -> ExtractionOutcome:
+    """Extract slide text from OOXML presentations."""
+    try:
+        from pptx import Presentation
+    except ImportError as e:
+        raise RuntimeError("python-pptx is required for PPTX ingestion") from e
+
+    try:
+        text_parts: list[str] = []
+        prs = Presentation(BytesIO(data))
+        for slide_num, slide in enumerate(prs.slides, start=1):
+            slide_lines: list[str] = []
+            for shape in slide.shapes:
+                text = getattr(shape, "text", None)
+                if text and text.strip():
+                    slide_lines.append(text.strip())
+            if slide_lines:
+                text_parts.append(f"--- Slide {slide_num} ---\n" + "\n".join(slide_lines))
+        text = normalize_unicode_nfc("\n\n".join(text_parts))
+    except (KeyError, OSError, ValueError, AttributeError):
+        return ExtractionOutcome(
+            pages=[],
+            requires_manual_review=False,
+            review_reason="empty_extract",
+        )
+    if not text.strip():
+        return ExtractionOutcome(
+            pages=[],
+            requires_manual_review=False,
+            review_reason="empty_extract",
+        )
+    pages = [
+        PageText(
+            page_number=1,
+            text=text,
+            extraction_mode="pptx",
             ocr_mean_confidence=None,
         )
     ]
@@ -218,6 +328,12 @@ async def extract_bytes(
         "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
     ) or name.endswith(".docx"):
         return await asyncio.to_thread(_extract_docx, data)
+
+    if mt in (
+        "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+        "application/vnd.ms-powerpoint",
+    ) or name.endswith(".pptx"):
+        return await asyncio.to_thread(_extract_pptx, data)
 
     if mt == "application/pdf" or name.endswith(".pdf"):
         if INGEST_EXTRACTOR == "gemini":

@@ -134,6 +134,9 @@ celerybeat.pid
 # SageMath parsed files
 *.sage.py
 
+# Scraped / uploaded document PDFs (local storage)
+data/documents/
+
 # Environments
 .env
 .envrc

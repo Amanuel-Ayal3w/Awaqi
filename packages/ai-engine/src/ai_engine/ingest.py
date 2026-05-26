@@ -153,6 +153,7 @@ async def ingest_bytes_for_document(
     mime_type: str | None,
     filename: str | None,
     genai_client: genai.Client | None = None,
+    force_index: bool = False,
 ) -> int:
     """
     Full pipeline: extract → (optional manual-review gate) → chunk → embed → store.
@@ -195,7 +196,7 @@ async def ingest_bytes_for_document(
         )
         raise ValueError("No text could be extracted from the document")
 
-    if outcome.requires_manual_review:
+    if outcome.requires_manual_review and not force_index:
         await _persist_status(
             db,
             doc,
@@ -207,6 +208,13 @@ async def ingest_bytes_for_document(
             "Document %s requires manual review (%s)", doc.id, outcome.review_reason
         )
         return 0
+
+    if outcome.requires_manual_review and force_index:
+        logger.warning(
+            "Document %s force_index despite review_reason=%s",
+            doc.id,
+            outcome.review_reason,
+        )
 
     return await _ingest_from_pages(db, doc, outcome.pages)
 
