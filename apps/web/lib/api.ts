@@ -197,6 +197,7 @@ export const adminApi = {
         offset?: number;
         scraped_only?: boolean;
         uploaded_by?: string;
+        status?: string;
     }): Promise<AdminDocumentList> => {
         const params = new URLSearchParams();
         const limit = options?.limit ?? 100;
@@ -209,6 +210,9 @@ export const adminApi = {
         }
         if (options?.uploaded_by) {
             params.set("uploaded_by", options.uploaded_by);
+        }
+        if (options?.status) {
+            params.set("status", options.status);
         }
         const { data } = await apiClient.get<AdminDocumentList>(
             `/v1/admin/documents?${params.toString()}`

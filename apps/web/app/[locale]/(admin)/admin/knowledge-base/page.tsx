@@ -1,13 +1,16 @@
 "use client"
 
 import { useCallback, useEffect, useState } from "react"
+import Link from "next/link"
+import { useLocale } from "next-intl"
 import { DataTable } from "@/components/ui/data-table"
 import { ColumnDef } from "@tanstack/react-table"
 import { Button } from "@/components/ui/button"
-import { Upload, File, Loader2, Trash2, RefreshCw } from "lucide-react"
+import { Upload, File, Loader2, Trash2, RefreshCw, FileSearch } from "lucide-react"
 import { useDropzone } from "react-dropzone"
 import { cn } from "@/lib/utils"
 import { adminApi } from "@/lib/api"
+import { adminDocumentReviewPath } from "@/lib/admin-routes"
 import type { AdminDocumentItem, DocumentStatus } from "@/types/api"
 
 type DocumentRow = {
@@ -20,88 +23,103 @@ type DocumentRow = {
     ingest_error?: string | null
 }
 
-const columns: ColumnDef<DocumentRow>[] = [
-    {
-        accessorKey: "title",
-        header: "Title",
-        cell: ({ row }) => (
-            <div className="flex items-center gap-2">
-                <File className="h-4 w-4 text-muted-foreground" />
-                <span className="font-medium">{row.getValue("title")}</span>
-            </div>
-        ),
-    },
-    {
-        accessorKey: "id",
-        header: "Document ID",
-        cell: ({ row }) => (
-            <span className="font-mono text-xs text-muted-foreground">
-                {(row.getValue("id") as string).slice(0, 8)}…
-            </span>
-        ),
-    },
-    {
-        accessorKey: "source_url",
-        header: "Source",
-        cell: ({ row }) => (
-            <span className="text-xs text-muted-foreground truncate block max-w-[280px]">
-                {(row.getValue("source_url") as string | null) ?? "manual upload"}
-            </span>
-        ),
-    },
-    {
-        accessorKey: "created_at",
-        header: "Created",
-        cell: ({ row }) => {
-            const value = row.getValue("created_at") as string
-            return (
-                <span className="text-xs text-muted-foreground">
-                    {new Date(value).toLocaleString()}
-                </span>
-            )
-        },
-    },
-    {
-        accessorKey: "status",
-        header: "Status",
-        cell: ({ row }) => {
-            const status = (row.getValue("status") as string).toLowerCase()
-            const stage = row.original.processing_stage
-            return (
-                <div className="flex flex-col gap-0.5">
-                    <div
-                        className={cn(
-                            "inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-semibold w-fit",
-                            status === "indexed" &&
-                                "bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400",
-                            (status === "pending" || status === "processing") &&
-                                "bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-400",
-                            status === "failed" &&
-                                "bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400",
-                            status === "requires_manual_review" &&
-                                "bg-amber-100 text-amber-900 dark:bg-amber-900/30 dark:text-amber-200",
-                        )}
-                    >
-                        {status.replace(/_/g, " ").toUpperCase()}
-                    </div>
-                    {stage ? (
-                        <span className="text-[10px] text-muted-foreground">{stage}</span>
-                    ) : null}
+function buildColumns(locale: string): ColumnDef<DocumentRow>[] {
+    return [
+        {
+            accessorKey: "title",
+            header: "Title",
+            cell: ({ row }) => (
+                <div className="flex items-center gap-2">
+                    <File className="h-4 w-4 text-muted-foreground" />
+                    <span className="font-medium">{row.getValue("title")}</span>
                 </div>
-            )
+            ),
         },
-    },
-    {
-        id: "actions",
-        cell: () => (
-            <div className="flex justify-end gap-2">
-                <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive" disabled>
-                    <Trash2 className="h-4 w-4" />
-                </Button>
-            </div>
-        ),
-    },
-]
+        {
+            accessorKey: "id",
+            header: "Document ID",
+            cell: ({ row }) => (
+                <span className="font-mono text-xs text-muted-foreground">
+                    {(row.getValue("id") as string).slice(0, 8)}…
+                </span>
+            ),
+        },
+        {
+            accessorKey: "source_url",
+            header: "Source",
+            cell: ({ row }) => (
+                <span className="text-xs text-muted-foreground truncate block max-w-[280px]">
+                    {(row.getValue("source_url") as string | null) ?? "manual upload"}
+                </span>
+            ),
+        },
+        {
+            accessorKey: "created_at",
+            header: "Created",
+            cell: ({ row }) => {
+                const value = row.getValue("created_at") as string
+                return (
+                    <span className="text-xs text-muted-foreground">
+                        {new Date(value).toLocaleString()}
+                    </span>
+                )
+            },
+        },
+        {
+            accessorKey: "status",
+            header: "Status",
+            cell: ({ row }) => {
+                const status = (row.getValue("status") as string).toLowerCase()
+                const stage = row.original.processing_stage
+                return (
+                    <div className="flex flex-col gap-0.5">
+                        <div
+                            className={cn(
+                                "inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-semibold w-fit",
+                                status === "indexed" &&
+                                    "bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400",
+                                (status === "pending" || status === "processing") &&
+                                    "bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-400",
+                                status === "failed" &&
+                                    "bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400",
+                                status === "requires_manual_review" &&
+                                    "bg-amber-100 text-amber-900 dark:bg-amber-900/30 dark:text-amber-200",
+                            )}
+                        >
+                            {status.replace(/_/g, " ").toUpperCase()}
+                        </div>
+                        {stage ? (
+                            <span className="text-[10px] text-muted-foreground">{stage}</span>
+                        ) : null}
+                    </div>
+                )
+            },
+        },
+        {
+            id: "actions",
+            cell: ({ row }) => {
+                const isReview = row.original.status === "requires_manual_review"
+                return (
+                    <div className="flex justify-end gap-2">
+                        {isReview && (
+                            <Button asChild variant="outline" size="sm" className="gap-1.5 h-8">
+                                <Link
+                                    href={adminDocumentReviewPath(locale, row.original.id, "review-queue")}
+                                >
+                                    <FileSearch className="h-3.5 w-3.5" />
+                                    Review
+                                </Link>
+                            </Button>
+                        )}
+                        <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive" disabled>
+                            <Trash2 className="h-4 w-4" />
+                        </Button>
+                    </div>
+                )
+            },
+        },
+    ]
+}
 
 function parseDuplicateConflict(detail: unknown): string | null {
     if (
@@ -119,6 +137,8 @@ function parseDuplicateConflict(detail: unknown): string | null {
 }
 
 export default function KnowledgeBasePage() {
+    const locale = useLocale()
+    const columns = buildColumns(locale)
     const [uploadCount, setUploadCount] = useState(0)
     const [uploadError, setUploadError] = useState<string | null>(null)
     /** Same file hash as an existing document — user can overwrite via API. */
