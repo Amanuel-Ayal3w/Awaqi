@@ -261,6 +261,37 @@ if _HAS_DB:
         await db_session.commit()
         return s
 
+    @pytest.fixture
+    async def customer_user(db_session: AsyncSession):
+        from database.models.customer import CuUser
+        user = CuUser(
+            id=uuid.uuid4(),
+            name="Test Customer",
+            email="customer@test.com",
+            email_verified=False,
+            created_at=datetime.now(timezone.utc),
+            updated_at=datetime.now(timezone.utc),
+        )
+        db_session.add(user)
+        await db_session.commit()
+        await db_session.refresh(user)
+        return user
+
+    @pytest.fixture
+    async def customer_session(db_session: AsyncSession, customer_user):
+        from database.models.customer import CuSession
+        s = CuSession(
+            id=str(uuid.uuid4()),
+            user_id=customer_user.id,
+            token="test-customer-token-789",
+            expires_at=datetime.now(timezone.utc) + timedelta(days=1),
+            created_at=datetime.now(timezone.utc),
+            updated_at=datetime.now(timezone.utc),
+        )
+        db_session.add(s)
+        await db_session.commit()
+        return s
+
 else:
     @pytest.fixture(autouse=True)
     def _setup_db():
