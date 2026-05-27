@@ -5,14 +5,14 @@ Uses gemini-embedding-2 with output_dimensionality=1536 — half the native
 limit. Switches index type from ivfflat to hnsw (better recall at high dims).
 All existing chunk rows must be re-indexed after this migration.
 
-Revision ID: 0010
-Revises: 0009
+Revision ID: 0013
+Revises: 0012_telegram_parts
 """
 
 from alembic import op
 
-revision: str = "0010"
-down_revision: str | None = "0009"
+revision: str = "0013"
+down_revision: str | None = "0012_telegram_parts"
 branch_labels: str | tuple[str, ...] | None = None
 depends_on: str | tuple[str, ...] | None = None
 

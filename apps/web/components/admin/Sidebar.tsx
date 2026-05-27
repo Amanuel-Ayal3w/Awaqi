@@ -15,11 +15,13 @@ import {
     LogOut,
     ChevronLeft,
     Menu,
+    ClipboardList,
 } from "lucide-react"
-import { useMemo, useState } from "react"
+import { useEffect, useMemo, useState } from "react"
 import { Button } from "@/components/ui/button"
 import { useLocale } from "next-intl"
 import { authClient } from "@/lib/auth-client"
+import { adminApi } from "@/lib/api"
 
 export function AdminSidebar() {
     const pathname = usePathname()
@@ -28,6 +30,28 @@ export function AdminSidebar() {
     const [isCollapsed, setIsCollapsed] = useState(false)
     const { data: session } = authClient.useSession()
     const role = (session?.user as any)?.role as string | undefined
+    const [reviewQueueCount, setReviewQueueCount] = useState<number>(0)
+
+    useEffect(() => {
+        let cancelled = false
+        const fetchCount = async () => {
+            try {
+                const result = await adminApi.listDocuments({
+                    limit: 1,
+                    status: "requires_manual_review",
+                })
+                if (!cancelled) setReviewQueueCount(result.total)
+            } catch {
+                // non-critical — badge simply won't show
+            }
+        }
+        void fetchCount()
+        const interval = setInterval(() => void fetchCount(), 60_000)
+        return () => {
+            cancelled = true
+            clearInterval(interval)
+        }
+    }, [])
 
     const handleLogout = async () => {
         await authClient.signOut()
@@ -40,31 +64,43 @@ export function AdminSidebar() {
                 title: "Overview",
                 href: `/${locale}/admin`,
                 icon: LayoutDashboard,
+                badge: null as number | null,
             },
             {
                 title: "Knowledge Base",
                 href: `/${locale}/admin/knowledge-base`,
                 icon: FileText,
+                badge: null,
             },
             {
                 title: "Scraper",
                 href: `/${locale}/admin/scraper`,
                 icon: Globe,
+                badge: null,
             },
             {
                 title: "Documents",
                 href: `/${locale}/admin/documents`,
                 icon: Files,
+                badge: null,
+            },
+            {
+                title: "Review Queue",
+                href: `/${locale}/admin/review-queue`,
+                icon: ClipboardList,
+                badge: reviewQueueCount > 0 ? reviewQueueCount : null,
             },
             {
                 title: "Telegram",
                 href: `/${locale}/admin/telegram`,
                 icon: Send,
+                badge: null,
             },
             {
                 title: "Analytics",
                 href: `/${locale}/admin/analytics`,
                 icon: BarChart3,
+                badge: null,
             },
         ]
 
@@ -73,6 +109,7 @@ export function AdminSidebar() {
                 title: "Users",
                 href: `/${locale}/admin/users`,
                 icon: Users,
+                badge: null,
             })
         }
 
@@ -80,10 +117,11 @@ export function AdminSidebar() {
             title: "Settings",
             href: `/${locale}/admin/settings`,
             icon: Settings,
+            badge: null,
         })
 
         return items
-    }, [locale, role])
+    }, [locale, role, reviewQueueCount])
 
     return (
         <aside
@@ -124,8 +162,22 @@ export function AdminSidebar() {
                                     isCollapsed && "justify-center px-2"
                                 )}
                             >
-                                <Icon className="h-4 w-4" />
-                                {!isCollapsed && <span>{item.title}</span>}
+                                <Icon className="h-4 w-4 shrink-0" />
+                                {!isCollapsed && (
+                                    <>
+                                        <span className="flex-1">{item.title}</span>
+                                        {item.badge != null && (
+                                            <span className="ml-auto flex h-5 min-w-5 items-center justify-center rounded-full bg-destructive px-1.5 text-[10px] font-bold text-destructive-foreground">
+                                                {item.badge > 99 ? "99+" : item.badge}
+                                            </span>
+                                        )}
+                                    </>
+                                )}
+                                {isCollapsed && item.badge != null && (
+                                    <span className="absolute left-8 top-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-destructive px-1 text-[9px] font-bold text-destructive-foreground">
+                                        {item.badge > 9 ? "9+" : item.badge}
+                                    </span>
+                                )}
                             </Link>
                         )
                     })}

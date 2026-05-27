@@ -33,6 +33,9 @@ MIN_TEXT_CHARS_FOR_NATIVE_PAGE = int(os.getenv("MIN_TEXT_CHARS_PER_PAGE", "40"))
 OCR_LANGS = os.getenv("OCR_LANGS", "eng+amh")
 OCR_CONFIDENCE_FAIL_THRESHOLD = float(os.getenv("OCR_CONFIDENCE_FAIL_THRESHOLD", "0.7"))
 OCR_RENDER_SCALE = float(os.getenv("OCR_RENDER_SCALE", "3.0"))
+# --oem 1  → LSTM neural net engine only (best accuracy, trained on real text)
+# --psm 3  → Fully automatic page segmentation (handles mixed Amharic+English columns)
+OCR_CONFIG = os.getenv("OCR_CONFIG", "--oem 1 --psm 3")
 
 _tesseract_langs_cache: set[str] | None = None
 _amh_warning_logged = False
@@ -84,15 +87,66 @@ def resolve_ocr_langs(requested: str | None = None) -> str:
     return "+".join(resolved)
 
 
+def _preprocess_for_ocr(img: "Image.Image") -> "Image.Image":
+    """
+    Improve OCR accuracy on scanned documents via:
+      1. Grayscale — removes colour noise
+      2. Gaussian blur — reduces scan grain before thresholding
+      3. Otsu binarization — converts to pure black/white, maximises contrast
+      4. Upscale if small — Tesseract works best at ≥300 DPI equivalent
+    Especially important for Amharic: the `amh` traineddata was trained on
+    clean binarised text; feeding it a noisy greyscale scan hurts accuracy.
+    """
+    import numpy as np
+    from PIL import Image
+
+    # Convert to grayscale
+    gray = img.convert("L")
+
+    # Upscale small images — Tesseract needs enough pixels per character
+    w, h = gray.size
+    if w < 1800:
+        scale = max(2, 1800 // w)
+        gray = gray.resize((w * scale, h * scale), Image.LANCZOS)
+
+    # Gaussian blur to reduce noise before threshold
+    from PIL import ImageFilter
+    blurred = gray.filter(ImageFilter.GaussianBlur(radius=1))
+
+    # Otsu binarisation via numpy
+    arr = np.array(blurred, dtype=np.uint8)
+    hist, _ = np.histogram(arr.flatten(), bins=256, range=(0, 256))
+    total = arr.size
+    best_thresh, best_var = 0, 0.0
+    w_bg = 0.0
+    sum_total = float(np.dot(np.arange(256), hist))
+    sum_bg = 0.0
+    for t in range(256):
+        w_bg += hist[t]
+        if w_bg == 0:
+            continue
+        w_fg = total - w_bg
+        if w_fg == 0:
+            break
+        sum_bg += t * hist[t]
+        mean_bg = sum_bg / w_bg
+        mean_fg = (sum_total - sum_bg) / w_fg
+        var = (w_bg / total) * (w_fg / total) * (mean_bg - mean_fg) ** 2
+        if var > best_var:
+            best_var, best_thresh = var, t
+    binarised = arr > best_thresh
+    result = Image.fromarray((binarised * 255).astype(np.uint8))
+    return result
+
+
 def ocr_pil_image(img: "Image.Image") -> tuple[str, float]:
     """Run Tesseract on a PIL image; return (text, mean_confidence 0..1)."""
     import pytesseract
     from PIL import Image
 
-    if img.mode != "RGB":
-        img = img.convert("RGB")
+    img = _preprocess_for_ocr(img)
     lang = resolve_ocr_langs()
-    data = pytesseract.image_to_data(img, lang=lang, output_type=pytesseract.Output.DICT)
+    data = pytesseract.image_to_data(img, lang=lang, config=OCR_CONFIG, output_type=pytesseract.Output.DICT)
     confs: list[float] = []
     words: list[str] = []
     for i, conf in enumerate(data.get("conf", [])):

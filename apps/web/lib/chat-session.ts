@@ -68,3 +68,14 @@ export function getSessionToken(sessionId: string): string | null {
     if (typeof window === 'undefined') return null;
     return sessionStorage.getItem(SESSION_TOKEN_PREFIX + sessionId);
 }
+
+/** Remove a session from localStorage (e.g. after a server-side delete). */
+export function removeSessionLocally(id: string) {
+    const sessions = getAllSessions().filter(s => s.id !== id);
+    saveSessions(sessions);
+    if (getActiveSessionId() === id) {
+        sessionStorage.removeItem(ACTIVE_SESSION_KEY);
+    }
+    sessionStorage.removeItem(SESSION_TOKEN_PREFIX + id);
+    window.dispatchEvent(new Event('awaqi-sessions-updated'));
+}

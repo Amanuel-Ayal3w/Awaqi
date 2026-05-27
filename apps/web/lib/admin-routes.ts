@@ -1,4 +1,4 @@
-export type AdminReviewFrom = "documents" | "scraper"
+export type AdminReviewFrom = "documents" | "scraper" | "review-queue"
 
 export function adminDocumentReviewPath(
     locale: string,
@@ -10,5 +10,6 @@ export function adminDocumentReviewPath(
 
 export function adminReviewBackPath(locale: string, from: AdminReviewFrom | null): string {
     if (from === "scraper") return `/${locale}/admin/scraper`
+    if (from === "review-queue") return `/${locale}/admin/review-queue`
     return `/${locale}/admin/documents`
 }

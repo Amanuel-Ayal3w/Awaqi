@@ -26,6 +26,19 @@ class ChatResponse(BaseModel):
     confidence_score: float
     session_token: Optional[str] = None
     detected_language: Optional[str] = None
+    follow_up_suggestions: List[str] = []
+
+
+class ChatSessionItem(BaseModel):
+    id: str
+    title: Optional[str] = None
+    created_at: str
+    message_count: int = 0
+    last_message_at: Optional[str] = None
+
+
+class ChatSessionList(BaseModel):
+    sessions: List[ChatSessionItem]
 
 
 class ChatMessage(BaseModel):
@@ -251,6 +264,7 @@ class AdminTelegramConfig(BaseModel):
     cron_minute: int
     api_configured: bool
     session_configured: bool
+    next_run_time: Optional[str] = None
 
 
 class AdminTelegramConfigPatch(BaseModel):
