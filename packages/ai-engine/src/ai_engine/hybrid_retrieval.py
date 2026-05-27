@@ -38,8 +38,11 @@ def reciprocal_rank_fusion(
 
 
 def _embed_query(text: str) -> list[float]:
-    """Embed user queries via the unified embedding backend."""
-    return embed_query_sync(text)
+    """Use OpenAI embeddings when OPENAI_API_KEY is available, else fall back to E5."""
+    if os.getenv("OPENAI_API_KEY"):
+        from ai_engine.openai_embedder import embed_query_openai_sync
+        return embed_query_openai_sync(text)
+    return _e5_embed_query_sync(text)
 
 
 async def retrieve_fused_chunk_ids(

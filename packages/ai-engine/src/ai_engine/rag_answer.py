@@ -98,12 +98,47 @@ def estimate_confidence(chunks: list[DocumentChunk]) -> float:
     return min(0.9, 0.35 + 0.1 * min(len(chunks), 5))
 
 
+def _generate_follow_ups_sync(
+    user_query: str, response_text: str, language: str
+) -> list[str]:
+    import json
+
+    from google import genai
+
+    api_key = os.getenv("GOOGLE_API_KEY")
+    if not api_key:
+        return []
+    model = os.getenv("GEMINI_CHAT_MODEL", "gemini-2.0-flash")
+    client = genai.Client(api_key=api_key)
+    lang_hint = "Amharic" if language == "am" else "English"
+    prompt = (
+        f"You are an Ethiopian tax assistant. Given the Q&A below, suggest exactly 3 short follow-up "
+        f"questions a taxpayer might naturally ask next. Respond in {lang_hint}. "
+        "Return ONLY a JSON array of 3 strings — no markdown, no explanation.\n\n"
+        f"Q: {user_query.strip()[:300]}\n"
+        f"A: {response_text.strip()[:500]}"
+    )
+    try:
+        resp = client.models.generate_content(model=model, contents=prompt)
+        text = (resp.text or "").strip()
+        # Strip markdown code fences if the model wrapped the JSON
+        if text.startswith("```"):
+            lines = text.splitlines()
+            text = "\n".join(lines[1:-1] if lines[-1].strip() == "```" else lines[1:])
+        chips = json.loads(text)
+        if isinstance(chips, list):
+            return [str(c).strip() for c in chips[:3] if c and str(c).strip()]
+    except Exception:
+        logger.debug("follow_up_generation_failed", exc_info=True)
+    return []
+
+
 async def answer_from_chunks(
     user_query: str,
     chunks: list[DocumentChunk],
     *,
     language: str,
-) -> tuple[str, list[dict[str, Any]], float]:
+) -> tuple[str, list[dict[str, Any]], float, list[str]]:
     citations = chunks_to_citations(chunks)
     if not chunks:
         return (
@@ -111,6 +146,7 @@ async def answer_from_chunks(
             "Try different wording or ask an admin to upload or scrape documents.",
             [],
             0.0,
+            [],
         )
 
     ctx_lines = []
@@ -118,16 +154,20 @@ async def answer_from_chunks(
         ctx_lines.append(f"[{i}] {(ch.content or '').strip()[:1200]}")
     context = "\n\n".join(ctx_lines)
 
+    lang = language or "en"
     if os.getenv("GOOGLE_API_KEY"):
         try:
             text = await asyncio.to_thread(
                 partial(_generate_gemini_sync, chunks=chunks),
                 user_query,
                 context,
-                language or "en",
+                lang,
             )
-            return text, citations, estimate_confidence(chunks)
+            follow_ups = await asyncio.to_thread(
+                _generate_follow_ups_sync, user_query, text, lang
+            )
+            return text, citations, estimate_confidence(chunks), follow_ups
         except Exception:
             logger.exception("gemini_chat_failed falling back to extractive")
     text = _extractive_answer(user_query, chunks)
-    return text, citations, estimate_confidence(chunks)
+    return text, citations, estimate_confidence(chunks), []

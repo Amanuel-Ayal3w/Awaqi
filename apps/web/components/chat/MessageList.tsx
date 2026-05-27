@@ -19,9 +19,10 @@ interface MessageListProps {
     messages: Message[];
     isLoading: boolean;
     onExportTranscript?: () => void;
+    onFollowUpClick?: (text: string) => void;
 }
 
-export function MessageList({ messages, isLoading, onExportTranscript }: MessageListProps) {
+export function MessageList({ messages, isLoading, onExportTranscript, onFollowUpClick }: MessageListProps) {
     const scrollRef = useRef<HTMLDivElement>(null);
     const t = useTranslations('chat');
     const [copied, setCopied] = useState<string | null>(null);
@@ -58,12 +59,17 @@ export function MessageList({ messages, isLoading, onExportTranscript }: Message
         );
     }
 
+    const lastAssistantIdx = messages.reduceRight(
+        (found, msg, idx) => (found === -1 && msg.role === 'assistant' ? idx : found),
+        -1
+    );
+
     return (
         <div
             className="flex-1 overflow-y-auto p-4 space-y-6 scroll-smooth [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]"
             ref={scrollRef}
         >
-            {messages.map((msg) => (
+            {messages.map((msg, msgIdx) => (
                 <div
                     key={msg.id}
                     className={cn('flex w-full gap-3', msg.role === 'user' ? 'justify-end' : 'justify-start')}
@@ -244,6 +250,25 @@ export function MessageList({ messages, isLoading, onExportTranscript }: Message
                                     </button>
                                 )}
                             </div>
+
+                            {/* Follow-up suggestion chips — only on the last assistant message, not while loading */}
+                            {!isLoading &&
+                                msgIdx === lastAssistantIdx &&
+                                msg.followUpSuggestions &&
+                                msg.followUpSuggestions.length > 0 && (
+                                <div className="flex flex-wrap gap-2 mt-2 max-w-[480px] animate-in fade-in slide-in-from-bottom-1 duration-300">
+                                    {msg.followUpSuggestions.map((chip) => (
+                                        <button
+                                            key={chip}
+                                            type="button"
+                                            onClick={() => onFollowUpClick?.(chip)}
+                                            className="text-xs px-3 py-1.5 rounded-full border border-border/70 bg-muted/40 text-muted-foreground hover:bg-primary/10 hover:border-primary/40 hover:text-foreground transition-all duration-150 text-left leading-snug"
+                                        >
+                                            {chip}
+                                        </button>
+                                    ))}
+                                </div>
+                            )}
                         </div>
                     )}
                 </div>

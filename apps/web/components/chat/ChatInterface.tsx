@@ -7,6 +7,7 @@ import { MessageList } from './MessageList';
 import { ChatInput } from './ChatInput';
 import { Message, Attachment } from './types';
 import { chatApi } from '@/lib/api';
+import { customerAuthClient } from '@/lib/customer-auth-client';
 import {
     createNewSession,
     getOrCreateSessionId,
@@ -21,6 +22,8 @@ export function ChatInterface() {
     const searchParams = useSearchParams();
     const [messages, setMessages] = useState<Message[]>([]);
     const [isLoading, setIsLoading] = useState(false);
+    const [isLoggedIn, setIsLoggedIn] = useState<boolean | null>(null);
+    const [migrated, setMigrated] = useState(false);
     const sessionIdRef = useRef<string>('');
     const hasSavedTitleRef = useRef(false);
 
@@ -62,8 +65,24 @@ export function ChatInterface() {
         initSession();
     }, [initSession]);
 
-    const handleSendMessage = async (content: string, attachments: Attachment[]) => {
+    // Check auth state once on mount so we can show/hide the login-to-save banner
+    useEffect(() => {
+        customerAuthClient.getSession().then(({ data }) => {
+            setIsLoggedIn(!!data?.session);
+        }).catch(() => setIsLoggedIn(false));
+    }, []);
+
+    const handleSendMessage = async (content: string, attachments: Attachment[] = []) => {
         if (!content.trim() && attachments.length === 0) return;
+
+        // Strip follow-up chips from the previous last assistant message when a new message is sent
+        setMessages((prev) =>
+            prev.map((m, i) =>
+                i === prev.length - 1 && m.role === 'assistant'
+                    ? { ...m, followUpSuggestions: undefined }
+                    : m
+            )
+        );
 
         const userMessage: Message = {
             id: Date.now().toString(),
@@ -101,6 +120,10 @@ export function ChatInterface() {
                     response.citations && response.citations.length > 0
                         ? response.citations
                         : undefined,
+                followUpSuggestions:
+                    response.follow_up_suggestions && response.follow_up_suggestions.length > 0
+                        ? response.follow_up_suggestions
+                        : undefined,
             };
             setMessages((prev) => [...prev, botMessage]);
         } catch {
@@ -112,6 +135,21 @@ export function ChatInterface() {
             setMessages((prev) => [...prev, errorMessage]);
         } finally {
             setIsLoading(false);
+        }
+    };
+
+    const handleFollowUpClick = (text: string) => {
+        handleSendMessage(text);
+    };
+
+    const handleSaveChat = async () => {
+        try {
+            // Open the login page; after auth the user returns and migration can be triggered
+            const locale = document.documentElement.lang ?? 'en';
+            const returnUrl = encodeURIComponent(window.location.pathname + window.location.search);
+            window.location.href = `/${locale}/chat/login?redirect=${returnUrl}&migrate_session=${sessionIdRef.current}`;
+        } catch {
+            // ignore
         }
     };
 
@@ -135,10 +173,30 @@ export function ChatInterface() {
         }
     };
 
+    const showSaveBanner =
+        isLoggedIn === false && !migrated && messages.some((m) => m.role === 'user');
+
     return (
         <div className="flex flex-col h-full w-full bg-background/50">
             <div className="flex-1 w-full max-w-3xl mx-auto flex flex-col h-full overflow-hidden">
-                <MessageList messages={messages} isLoading={isLoading} onExportTranscript={handleExportTranscript} />
+                {/* Login-to-save banner (AWA-34) */}
+                {showSaveBanner && (
+                    <div className="mx-4 mt-3 flex items-center justify-between gap-3 rounded-xl border border-primary/20 bg-primary/5 px-4 py-2.5 text-sm animate-in fade-in duration-300">
+                        <span className="text-muted-foreground">{t('savePrompt', { defaultMessage: 'Login to save this conversation' })}</span>
+                        <button
+                            onClick={handleSaveChat}
+                            className="shrink-0 rounded-lg bg-primary px-3 py-1 text-xs font-medium text-primary-foreground hover:bg-primary/90 transition-colors"
+                        >
+                            {t('loginToSave', { defaultMessage: 'Login' })}
+                        </button>
+                    </div>
+                )}
+                <MessageList
+                    messages={messages}
+                    isLoading={isLoading}
+                    onExportTranscript={handleExportTranscript}
+                    onFollowUpClick={handleFollowUpClick}
+                />
                 <div className="p-4 pb-6 w-full">
                     <ChatInput onSend={handleSendMessage} disabled={isLoading} />
                 </div>

@@ -23,6 +23,7 @@ import type {
     ChatMessage,
     ChatRequest,
     ChatResponse,
+    ChatSessionList,
     DocumentStatus,
     FeedbackRequest,
     LogEntryList,
@@ -116,6 +117,41 @@ export const chatApi = {
             responseType: "text",
         });
         return data;
+    },
+
+    /** List all sessions belonging to the authenticated customer (AWA-35). */
+    listSessions: async (cuUserId: string): Promise<ChatSessionList> => {
+        const { data } = await apiClient.get<ChatSessionList>("/v1/chat/sessions/me", {
+            headers: { "X-Cu-User-Id": cuUserId },
+        });
+        return data;
+    },
+
+    /** Delete a session and all its messages (AWA-35). */
+    deleteSession: async (
+        sessionId: string,
+        options: { cuUserId?: string; sessionToken?: string | null }
+    ): Promise<void> => {
+        const headers: Record<string, string> = {};
+        if (options.cuUserId) headers["X-Cu-User-Id"] = options.cuUserId;
+        if (options.sessionToken) headers["X-Session-Token"] = options.sessionToken;
+        await apiClient.delete(`/v1/chat/sessions/${sessionId}`, { headers });
+    },
+
+    /**
+     * Link a guest session to the now-authenticated customer (AWA-34).
+     * Call immediately after login, before creating a new session.
+     */
+    migrateSession: async (
+        sessionId: string,
+        cuUserId: string,
+        sessionToken: string
+    ): Promise<void> => {
+        await apiClient.post(
+            `/v1/chat/migrate/${sessionId}`,
+            {},
+            { headers: { "X-Cu-User-Id": cuUserId, "X-Session-Token": sessionToken } }
+        );
     },
 };
 
