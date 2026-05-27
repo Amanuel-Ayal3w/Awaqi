@@ -70,7 +70,9 @@ documents (1) ──< (N) document_chunks
 The fastest way is Docker Compose from the repo root:
 
 ```bash
-docker compose -f docker/docker-compose.yml up -d db redis
+docker compose -f docker/docker-compose.db.yml up -d
+docker compose -f docker/docker-compose.redis.yml up -d
+# or: docker compose -f docker/docker-compose.yml up -d db redis
 ```
 
 This starts:

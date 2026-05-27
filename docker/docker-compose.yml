@@ -1,36 +1,30 @@
+# Full stack: PostgreSQL (pgvector) + Redis + API + Web + Telegram bot.
+#
+# DB only:
+#   docker compose -f docker/docker-compose.db.yml up -d
+#
+# Redis only:
+#   docker compose -f docker/docker-compose.redis.yml up -d
+#
+# DB + Redis (local dev, no app containers):
+#   docker compose -f docker/docker-compose.yml up -d db redis
+#
+# Everything:
+#   docker compose -f docker/docker-compose.yml up --build
+
+include:
+  - docker-compose.db.yml
+  - docker-compose.redis.yml
+
 services:
-  db:
-    image: pgvector/pgvector:pg16
-    environment:
-      POSTGRES_USER: ${POSTGRES_USER:-user}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-password}
-      POSTGRES_DB: ${POSTGRES_DB:-awaqi_db}
-    ports:
-      - "5432:5432"
-    healthcheck:
-      test: [ "CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-user} -d ${POSTGRES_DB:-awaqi_db}" ]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-
-  redis:
-    image: redis:7-alpine
-    ports:
-      - "6379:6379"
-    healthcheck:
-      test: [ "CMD", "redis-cli", "ping" ]
-      interval: 10s
-      timeout: 3s
-      retries: 5
-
   api:
     build:
-      context: .
+      context: ..
       dockerfile: docker/api.Dockerfile
     ports:
       - "8000:8000"
     env_file:
-      - .env
+      - ../.env
     environment:
       DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-user}:${POSTGRES_PASSWORD:-password}@db:5432/${POSTGRES_DB:-awaqi_db}
       REDIS_URL: redis://redis:6379/0
@@ -42,12 +36,12 @@ services:
 
   web:
     build:
-      context: .
+      context: ..
       dockerfile: docker/web.Dockerfile
     ports:
       - "3000:3100"
     env_file:
-      - .env
+      - ../.env
     environment:
       DATABASE_URL_SYNC: postgresql://${POSTGRES_USER:-user}:${POSTGRES_PASSWORD:-password}@db:5432/${POSTGRES_DB:-awaqi_db}
     depends_on:
@@ -55,13 +49,12 @@ services:
 
   telegram_bot:
     build:
-      context: .
+      context: ..
       dockerfile: docker/bot.Dockerfile
     env_file:
-      - .env
+      - ../.env
     environment:
       DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-user}:${POSTGRES_PASSWORD:-password}@db:5432/${POSTGRES_DB:-awaqi_db}
       REDIS_URL: redis://redis:6379/0
     depends_on:
       - api
-

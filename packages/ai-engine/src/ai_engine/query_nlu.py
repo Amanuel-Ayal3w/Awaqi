@@ -33,12 +33,9 @@ def detect_query_language(text: str) -> Literal["am", "en", "mixed"]:
     return "en"
 
 
-def build_e5_query_text(user_query: str, *, taxpayer_category: str | None) -> str:
+def build_retrieval_query_text(user_query: str, *, taxpayer_category: str | None) -> str:
     """
-    Optional category bias for e5 ``query:`` embedding (AWA-19).
-
-    Prefix is plain text inside the user string passed to the embedder (which adds
-    ``query: ``). Keep it short to preserve token budget.
+    Optional category bias prepended to the user query before Gemini embedding (AWA-19).
     """
     q = user_query.strip()
     if not q:
@@ -47,3 +44,8 @@ def build_e5_query_text(user_query: str, *, taxpayer_category: str | None) -> st
     if not cat:
         return q
     return f"Taxpayer category: {cat}. Question: {q}"
+
+
+def build_e5_query_text(user_query: str, *, taxpayer_category: str | None) -> str:
+    """Deprecated alias — use ``build_retrieval_query_text``."""
+    return build_retrieval_query_text(user_query, taxpayer_category=taxpayer_category)

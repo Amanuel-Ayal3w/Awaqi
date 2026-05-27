@@ -213,7 +213,7 @@ async def send_message(
         logger.exception("rag_pipeline_error session_id=%s", chat_session.id)
         response_text = (
             "The knowledge base search is temporarily unavailable "
-            "(the embedding model may still be loading on first start). "
+            "(Gemini embeddings may be unavailable — check GOOGLE_API_KEY). "
             "Please try again in a moment."
         )
         citation_dicts = []

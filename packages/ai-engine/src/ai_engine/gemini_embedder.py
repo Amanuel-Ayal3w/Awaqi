@@ -1,59 +1,115 @@
 """
-Gemini embedding for both retrieval queries and document ingestion.
+Gemini embeddings for RAG indexing and retrieval (AWA-14).
 
-Uses ``gemini-embedding-2`` at output_dimensionality=1536 (pgvector indexes
-cap at 2000 dims; 1536 is half the native 3072-d output and still excellent).
-The pgvector column is Vector(1536) — see migration 0013.
+Uses ``gemini-embedding-001`` with Google-recommended task types:
+  - ``RETRIEVAL_DOCUMENT`` for passage/chunk indexing (ingest)
+  - ``RETRIEVAL_QUERY`` for user queries (hybrid retrieval)
 
-Task types:
-  RETRIEVAL_QUERY    — query time  (hybrid_retrieval.py)
-  RETRIEVAL_DOCUMENT — index time  (ingest.py)
+Both paths MUST use the same model and ``output_dimensionality`` so cosine
+search in pgvector is meaningful.
 """
 
 from __future__ import annotations
 
 import logging
+import math
 import os
+from typing import Sequence
+
+from google import genai
+from google.genai import types
 
 logger = logging.getLogger(__name__)
 
-GEMINI_EMBED_MODEL = os.getenv("GEMINI_EMBED_MODEL", "gemini-embedding-2")
-GEMINI_EMBED_DIM = int(os.getenv("GEMINI_EMBED_DIM", "1536"))
-# Gemini embedding API allows up to 100 texts per batch request
-_BATCH_SIZE = 100
+GEMINI_EMBEDDING_MODEL = os.getenv("GEMINI_EMBEDDING_MODEL", "gemini-embedding-001")
+# Default: full 3072-dim output (gemini-embedding-001 native size, best RAG quality).
+GEMINI_EMBEDDING_DIMENSION = int(os.getenv("GEMINI_EMBEDDING_DIMENSION", "3072"))
+GEMINI_EMBED_BATCH = int(os.getenv("GEMINI_EMBED_BATCH", "32"))
+
+# Exported for DB schema alignment (see packages/database EMBEDDING_DIM).
+EMBEDDING_DIM = GEMINI_EMBEDDING_DIMENSION
 
 
-def _embed_batch(texts: list[str], task_type: str) -> list[list[float]]:
-    from google import genai
-    from google.genai import types
-
-    api_key = os.getenv("GOOGLE_API_KEY")
+def _client() -> genai.Client:
+    api_key = os.getenv("GOOGLE_API_KEY", "").strip()
     if not api_key:
-        raise RuntimeError("GOOGLE_API_KEY is not set")
-
-    client = genai.Client(api_key=api_key)
-    all_vecs: list[list[float]] = []
-    for start in range(0, len(texts), _BATCH_SIZE):
-        batch = texts[start : start + _BATCH_SIZE]
-        response = client.models.embed_content(
-            model=GEMINI_EMBED_MODEL,
-            contents=batch,
-            config=types.EmbedContentConfig(
-                task_type=task_type,
-                output_dimensionality=GEMINI_EMBED_DIM,
-            ),
+        raise RuntimeError(
+            "GOOGLE_API_KEY is required for Gemini embeddings. "
+            "Set it in .env (https://aistudio.google.com/apikey)."
         )
-        all_vecs.extend(list(e.values) for e in response.embeddings)
+    return genai.Client(api_key=api_key)
+
+
+def _normalize(vec: Sequence[float]) -> list[float]:
+    """L2-normalize (required for gemini-embedding-001 when output_dimensionality < 3072)."""
+    norm = math.sqrt(sum(float(x) * float(x) for x in vec))
+    if norm <= 0:
+        return [float(x) for x in vec]
+    return [float(x) / norm for x in vec]
+
+
+def _document_config() -> types.EmbedContentConfig:
+    return types.EmbedContentConfig(
+        task_type="RETRIEVAL_DOCUMENT",
+        output_dimensionality=GEMINI_EMBEDDING_DIMENSION,
+    )
+
+
+def _query_config() -> types.EmbedContentConfig:
+    return types.EmbedContentConfig(
+        task_type="RETRIEVAL_QUERY",
+        output_dimensionality=GEMINI_EMBEDDING_DIMENSION,
+    )
+
+
+def _embed_batch(texts: list[str], *, config: types.EmbedContentConfig) -> list[list[float]]:
+    if not texts:
+        return []
+    client = _client()
+    model = GEMINI_EMBEDDING_MODEL
+    all_vecs: list[list[float]] = []
+
+    for start in range(0, len(texts), GEMINI_EMBED_BATCH):
+        batch = texts[start : start + GEMINI_EMBED_BATCH]
+        response = client.models.embed_content(
+            model=model,
+            contents=batch,
+            config=config,
+        )
+        embeddings = response.embeddings
+        if embeddings is None or len(embeddings) != len(batch):
+            raise RuntimeError(
+                f"Gemini embed_content returned {len(embeddings or [])} vectors "
+                f"for {len(batch)} inputs (model={model})"
+            )
+        for emb in embeddings:
+            values = emb.values
+            if values is None:
+                raise RuntimeError("Gemini embedding missing values")
+            vec = _normalize(values)
+            if len(vec) != GEMINI_EMBEDDING_DIMENSION:
+                raise RuntimeError(
+                    f"Expected embedding dim {GEMINI_EMBEDDING_DIMENSION}, got {len(vec)}"
+                )
+            all_vecs.append(vec)
+
     return all_vecs
 
 
-def embed_query_gemini_sync(text: str) -> list[float]:
-    """Return a 1536-d query embedding (RETRIEVAL_QUERY task type)."""
-    return _embed_batch([text], "RETRIEVAL_QUERY")[0]
+def embed_passages_sync(texts: list[str]) -> list[list[float]]:
+    """Embed document chunks for indexing (RETRIEVAL_DOCUMENT)."""
+    logger.debug(
+        "gemini_embed_passages count=%d model=%s dim=%d",
+        len(texts),
+        GEMINI_EMBEDDING_MODEL,
+        GEMINI_EMBEDDING_DIMENSION,
+    )
+    return _embed_batch(texts, config=_document_config())
 
 
-def embed_passages_gemini_sync(texts: list[str]) -> list[list[float]]:
-    """Return 1536-d embeddings for document chunks (RETRIEVAL_DOCUMENT task type)."""
-    if not texts:
+def embed_query_sync(text: str) -> list[float]:
+    """Embed a single user query (RETRIEVAL_QUERY)."""
+    if not text.strip():
         return []
-    return _embed_batch(texts, "RETRIEVAL_DOCUMENT")
+    vecs = _embed_batch([text.strip()], config=_query_config())
+    return vecs[0] if vecs else []

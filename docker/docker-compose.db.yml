@@ -1,0 +1,38 @@
+# PostgreSQL 16 + pgvector only (local dev / infra).
+#
+# From repo root:
+#   docker compose -f docker/docker-compose.db.yml up -d
+#
+# Loads POSTGRES_* from repo-root .env when present (optional).
+# Full stack (API, web, redis) still uses docker-compose.yml, which includes this file.
+
+services:
+  db:
+    image: pgvector/pgvector:pg16
+    container_name: awaqi-db
+    env_file:
+      - path: ../.env
+        required: false
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-user}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-password}
+      POSTGRES_DB: ${POSTGRES_DB:-awaqi_db}
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - awaqi_pgdata:/var/lib/postgresql/data
+      - ./init-db:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "pg_isready -U ${POSTGRES_USER:-user} -d ${POSTGRES_DB:-awaqi_db}",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+volumes:
+  awaqi_pgdata:
+    name: awaqi_pgdata

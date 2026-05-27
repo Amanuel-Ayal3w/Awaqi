@@ -21,7 +21,9 @@ This repository hosts the **Ethio-Revenue-Bot**, an AI-powered tax support assis
 │   ├── api.Dockerfile           # For the Web Backend
 │   ├── web.Dockerfile           # For the Next.js Frontend
 │   ├── bot.Dockerfile           # For the Telegram Service
-│   └── docker-compose.yml       # Orchestrates all services + DB + Redis
+│   ├── docker-compose.yml       # Full stack (includes DB + Redis + apps)
+│   ├── docker-compose.db.yml    # PostgreSQL 16 + pgvector only
+│   └── init-db/                 # Extensions on first DB start
 │
 ├── .github/                     # Change Management & CI/CD
 │   └── workflows/               # Automated testing & deployment pipelines
@@ -46,7 +48,11 @@ export BETTER_AUTH_SECRET="$(openssl rand -base64 32)"
 ```
 
 ```bash
-docker-compose -f docker/docker-compose.yml up --build
+# Database only (PostgreSQL + pgvector):
+docker compose -f docker/docker-compose.db.yml up -d
+
+# Full stack:
+docker compose -f docker/docker-compose.yml up --build
 ```
 
 - **Frontend**: http://localhost:3100
