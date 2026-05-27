@@ -1,7 +1,8 @@
 """
-multilingual-e5-large embeddings (AWA-14).
+multilingual-e5-large tokenizer utilities (chunking only).
 
-Uses ``passage:`` prefix for document chunks and ``query:`` for search queries (AWA-19).
+RAG **embeddings** use Gemini — see ``gemini_embedder.py`` / ``embeddings.py``.
+This module remains for token-window chunking aligned to the E5 tokenizer (AWA-12).
 """
 
 from __future__ import annotations
@@ -78,13 +79,12 @@ def _embed_prefixed_batch(texts: list[str], prefix: str) -> list[list[float]]:
 
 
 def embed_passages_sync(texts: list[str]) -> list[list[float]]:
-    """Sync embedding for indexing (``passage:`` prefix)."""
-    if not texts:
-        return []
-    return _embed_prefixed_batch(texts, "passage: ")
+    raise RuntimeError(
+        "E5 embeddings are disabled. Use ai_engine.embeddings.embed_passages_sync (Gemini)."
+    )
 
 
 def embed_query_sync(text: str) -> list[float]:
-    """Single query vector (``query:`` prefix)."""
-    vecs = _embed_prefixed_batch([text], "query: ")
-    return vecs[0] if vecs else []
+    raise RuntimeError(
+        "E5 embeddings are disabled. Use ai_engine.embeddings.embed_query_sync (Gemini)."
+    )

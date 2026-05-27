@@ -29,6 +29,14 @@ apps/api/
 From the repo root:
 
 ```bash
+docker compose -f docker/docker-compose.db.yml up -d
+```
+Or Redis only:
+```bash
+docker compose -f docker/docker-compose.redis.yml up -d
+```
+Or DB + Redis:
+```bash
 docker compose -f docker/docker-compose.yml up -d db redis
 ```
 
@@ -118,6 +126,17 @@ The API will be available at `http://localhost:8000`.
 | `TELEGRAM_SCRAPE_SINCE` | Default `2026-04-01` (only posts on/after this date) |
 
 Admin: `POST /v1/admin/telegram/scrape`, `GET /v1/admin/telegram/messages`, config at `/v1/admin/telegram/config`.
+
+### RAG embeddings (ingest + retrieval)
+
+Both indexing and hybrid retrieval use **Gemini** (`gemini-embedding-001` by default):
+
+| Path | Module | Task type |
+|------|--------|-----------|
+| Ingest | `ai_engine.embeddings.embed_passages_sync` | `RETRIEVAL_DOCUMENT` |
+| Chat search | `ai_engine.embeddings.embed_query_sync` | `RETRIEVAL_QUERY` |
+
+Requires `GOOGLE_API_KEY`. Default vector size: **3072** (`GEMINI_EMBEDDING_DIMENSION`, full `gemini-embedding-001` output). After upgrading from E5 (1024-dim), run migration `0013_gemini_embedding_dim` and **re-index all documents**.
 
 ## Endpoints
 

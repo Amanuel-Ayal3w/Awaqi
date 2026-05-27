@@ -285,7 +285,10 @@ uv sync
 
 ### Running Services
 ```bash
-# Start PostgreSQL + Redis
+# PostgreSQL + pgvector only
+docker compose -f docker/docker-compose.db.yml up -d
+
+# Or DB + Redis
 docker compose -f docker/docker-compose.yml up -d db redis
 
 # Run database migrations
