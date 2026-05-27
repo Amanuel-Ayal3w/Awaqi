@@ -40,6 +40,7 @@ def upgrade() -> None:
     current = _embedding_dim()
     if current == NEW_DIM:
         return
+    op.execute("DROP INDEX IF EXISTS ix_document_chunks_embedding_hnsw")
     op.execute("DROP INDEX IF EXISTS ix_document_chunks_embedding_ivfflat")
     op.execute("ALTER TABLE document_chunks DROP COLUMN IF EXISTS embedding")
     op.add_column(
@@ -47,8 +48,8 @@ def upgrade() -> None:
         sa.Column("embedding", Vector(NEW_DIM), nullable=True),
     )
     op.execute(
-        "CREATE INDEX IF NOT EXISTS ix_document_chunks_embedding_ivfflat "
-        "ON document_chunks USING ivfflat (embedding vector_cosine_ops) WITH (lists = 100)"
+        "CREATE INDEX IF NOT EXISTS ix_document_chunks_embedding_hnsw "
+        "ON document_chunks USING hnsw (embedding vector_cosine_ops)"
     )
 
 
@@ -56,6 +57,7 @@ def downgrade() -> None:
     current = _embedding_dim()
     if current == 1536:
         return
+    op.execute("DROP INDEX IF EXISTS ix_document_chunks_embedding_hnsw")
     op.execute("DROP INDEX IF EXISTS ix_document_chunks_embedding_ivfflat")
     op.execute("ALTER TABLE document_chunks DROP COLUMN IF EXISTS embedding")
     op.add_column(

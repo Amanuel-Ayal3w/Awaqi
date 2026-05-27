@@ -198,6 +198,7 @@ version = "0.1.0"
 source = { virtual = "." }
 dependencies = [
     { name = "ai-engine" },
+    { name = "apscheduler" },
     { name = "dotenv" },
     { name = "fastapi" },
     { name = "telethon" },
@@ -216,6 +217,7 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "ai-engine", editable = "packages/ai-engine" },
+    { name = "apscheduler", specifier = ">=3.11.2" },
     { name = "dotenv", specifier = ">=0.9.9" },
     { name = "fastapi", specifier = ">=0.129.0" },
     { name = "telethon", specifier = ">=1.43.2" },

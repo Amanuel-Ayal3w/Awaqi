@@ -5,6 +5,7 @@ description = "Awaqi Monorepo"
 requires-python = ">=3.11"
 dependencies = [
     "ai-engine",
+    "apscheduler>=3.11.2",
     "dotenv>=0.9.9",
     "fastapi>=0.129.0",
     "telethon>=1.43.2",
