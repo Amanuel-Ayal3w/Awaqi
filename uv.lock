@@ -197,6 +197,7 @@ name = "awaqi-monorepo"
 version = "0.1.0"
 source = { virtual = "." }
 dependencies = [
+    { name = "ai-engine" },
     { name = "dotenv" },
     { name = "fastapi" },
     { name = "telethon" },
@@ -214,6 +215,7 @@ dev = [
 
 [package.metadata]
 requires-dist = [
+    { name = "ai-engine", editable = "packages/ai-engine" },
     { name = "dotenv", specifier = ">=0.9.9" },
     { name = "fastapi", specifier = ">=0.129.0" },
     { name = "telethon", specifier = ">=1.43.2" },

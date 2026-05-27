@@ -4,6 +4,7 @@ version = "0.1.0"
 description = "Awaqi Monorepo"
 requires-python = ">=3.11"
 dependencies = [
+    "ai-engine",
     "dotenv>=0.9.9",
     "fastapi>=0.129.0",
     "telethon>=1.43.2",
@@ -19,6 +20,9 @@ members = [
     "packages/nlu",
     "packages/utils"
 ]
+
+[tool.uv.sources]
+ai-engine = { workspace = true }
 
 [dependency-groups]
 dev = [
