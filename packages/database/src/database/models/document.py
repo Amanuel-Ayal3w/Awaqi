@@ -119,7 +119,9 @@ class Document(Base):
 
 
 # Must match ``GEMINI_EMBEDDING_DIMENSION`` / ``ai_engine.gemini_embedder.EMBEDDING_DIM``.
-EMBEDDING_DIM = 3072
+# 1536-d: half of gemini-embedding-001's native output, still excellent quality,
+# and stays within pgvector's 2000-d index limit for all pgvector versions.
+EMBEDDING_DIM = 1536
 
 
 class DocumentChunk(Base):
@@ -155,9 +157,9 @@ class DocumentChunk(Base):
 
     __table_args__ = (
         Index(
-            "ix_document_chunks_embedding_ivfflat",
+            "ix_document_chunks_embedding_hnsw",
             "embedding",
-            postgresql_using="ivfflat",
+            postgresql_using="hnsw",
         ),
         Index(
             "ix_document_chunks_content_trgm",

@@ -1,4 +1,9 @@
-"""Resize pgvector embeddings for Gemini (3072-dim). Existing E5 vectors must be re-indexed.
+"""Resize pgvector embeddings for Gemini (1536-dim). Existing E5 vectors must be re-indexed.
+
+Uses gemini-embedding-001 with output_dimensionality=1536 — half the native
+3072-d output, still excellent RAG quality, and within pgvector's 2000-d index
+limit for all pgvector versions.  Switches index type from ivfflat to hnsw
+(better recall at high dims).
 
 Revision ID: 0013_gemini_embedding_dim
 Revises: 0012_telegram_parts
@@ -13,8 +18,7 @@ down_revision = "0012_telegram_parts"
 branch_labels = None
 depends_on = None
 
-# Full native dimension for gemini-embedding-001 (best retrieval quality).
-NEW_DIM = 3072
+NEW_DIM = 1536
 
 
 def upgrade() -> None:
