@@ -30,7 +30,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from ai_engine.chunking_service import ChunkingService
 from ai_engine.document_processor import extract_bytes
-from ai_engine.e5_embedder import embed_passages_sync, get_tokenizer
+from ai_engine.e5_embedder import get_tokenizer
+from ai_engine.embeddings import EMBEDDING_DIM, embed_passages_sync
 from ai_engine.extractor import PageText
 from ai_engine.heuristics import (
     guess_article_number_from_text,
@@ -98,6 +99,10 @@ async def _ingest_from_pages(
 
     if len(embeddings) != len(chunks):
         raise RuntimeError("Embedding count does not match chunk count")
+    if embeddings and len(embeddings[0]) != EMBEDDING_DIM:
+        raise RuntimeError(
+            f"Embedding dimension {len(embeddings[0])} != expected {EMBEDDING_DIM}"
+        )
 
     await _persist_stage(db, doc, _stage_value(ProcessingStage.INDEXING))
 

@@ -1,0 +1,25 @@
+# Redis only (local dev / infra).
+#
+# From repo root:
+#   docker compose -f docker/docker-compose.redis.yml up -d
+#
+# Full stack still uses docker-compose.yml, which includes this file.
+
+services:
+  redis:
+    image: redis:7-alpine
+    container_name: awaqi-redis
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    volumes:
+      - awaqi_redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+    restart: unless-stopped
+
+volumes:
+  awaqi_redis_data:
+    name: awaqi_redis_data
