@@ -86,7 +86,7 @@ apps/web/
 
 ## Environment variables
 
-Next.js loads env from the **monorepo root** (see `next.config.ts` → `envDir`). Copy the example from repo root:
+Next.js loads env from the **monorepo root first**, then **apps/web**, via `loadEnvConfig` in `next.config.ts`. Copy the example from repo root:
 
 ```bash
 # From repository root
@@ -98,7 +98,7 @@ Required:
 | Variable | Purpose |
 |---|---|
 | `DATABASE_URL_SYNC` | PostgreSQL sync URL for Better Auth (`postgresql://…`, not `asyncpg`) |
-| `BETTER_AUTH_SECRET` | Auth signing secret — `openssl rand -base64 32` |
+| `BETTER_AUTH_SECRET` | Auth signing secret — **at least 32 characters** (`openssl rand -base64 32`). Required for `next start`; `next build` succeeds with a missing/short secret but you must set a real value before production. |
 | `NEXT_PUBLIC_APP_URL` | Frontend origin, e.g. `http://localhost:3100` |
 | `NEXT_PUBLIC_API_URL` | FastAPI backend, e.g. `http://localhost:8000` |
 
