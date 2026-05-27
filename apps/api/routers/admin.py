@@ -30,6 +30,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from apps.api.deps import get_current_admin
 from apps.api.document_preview import build_content_preview, get_document_or_404, load_document_bytes
 from apps.api.scraper_scheduler import apply_scheduler_config, get_next_run_time
+from apps.api.telegram_scheduler import apply_telegram_scheduler_config, get_telegram_next_run_time
 from apps.api.scraper_service import (
     execute_scrape_run,
     get_last_scraper_run,
@@ -210,6 +211,11 @@ async def list_admin_documents(
         None,
         description="Filter by uploader ba_user UUID (superadmin only).",
     ),
+    status_filter: str | None = Query(
+        None,
+        alias="status",
+        description="Filter by document status (e.g. requires_manual_review, indexed, failed).",
+    ),
     current_user: BaUser = Depends(get_current_admin),
     db: AsyncSession = Depends(get_session),
 ):
@@ -231,6 +237,8 @@ async def list_admin_documents(
         count_stmt = count_stmt.where(Document.source_url.isnot(None))
     if uploader_filter is not None:
         count_stmt = count_stmt.where(Document.uploaded_by_id == uploader_filter)
+    if status_filter is not None:
+        count_stmt = count_stmt.where(Document.status == status_filter)
     total = int(await db.scalar(count_stmt) or 0)
 
     stmt = (
@@ -244,6 +252,8 @@ async def list_admin_documents(
         stmt = stmt.where(Document.source_url.isnot(None))
     if uploader_filter is not None:
         stmt = stmt.where(Document.uploaded_by_id == uploader_filter)
+    if status_filter is not None:
+        stmt = stmt.where(Document.status == status_filter)
 
     result = await db.execute(stmt)
     rows = result.all()
@@ -732,6 +742,7 @@ async def trigger_telegram_scrape(
 
 @router.get("/admin/telegram/config", response_model=AdminTelegramConfig)
 async def telegram_config_get(
+    request: Request,
     current_user: BaUser = Depends(get_current_admin),
 ):
     _require_superadmin(current_user)
@@ -745,11 +756,13 @@ async def telegram_config_get(
         cron_minute=s.cron_minute,
         api_configured=s.api_configured,
         session_configured=s.session_configured,
+        next_run_time=get_telegram_next_run_time(request.app),
     )
 
 
 @router.patch("/admin/telegram/config", response_model=AdminTelegramConfig)
 async def telegram_config_patch(
+    request: Request,
     body: AdminTelegramConfigPatch,
     current_user: BaUser = Depends(get_current_admin),
 ):
@@ -773,6 +786,7 @@ async def telegram_config_patch(
         cron_hour=body.cron_hour,
         cron_minute=body.cron_minute,
     )
+    await apply_telegram_scheduler_config(request.app)
     return AdminTelegramConfig(
         channel_username=s.channel_username,
         scrape_since=s.scrape_since.isoformat(),
@@ -782,6 +796,7 @@ async def telegram_config_patch(
         cron_minute=s.cron_minute,
         api_configured=s.api_configured,
         session_configured=s.session_configured,
+        next_run_time=get_telegram_next_run_time(request.app),
     )
 
 

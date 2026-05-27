@@ -30,6 +30,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Badge } from "@/components/ui/badge"
+import { Switch } from "@/components/ui/switch"
 import {
     Select,
     SelectContent,
@@ -59,6 +60,9 @@ export default function AdminTelegramPage() {
     const [channel, setChannel] = useState("morwestaa")
     const [scrapeSince, setScrapeSince] = useState("2026-04-01")
     const [maxMessages, setMaxMessages] = useState("200")
+    const [schedulerEnabled, setSchedulerEnabled] = useState(false)
+    const [cronHour, setCronHour] = useState("1")
+    const [cronMinute, setCronMinute] = useState("0")
     const [filterType, setFilterType] = useState(TYPE_FILTER_ALL)
     const [filterIngest, setFilterIngest] = useState(INGEST_FILTER_ALL)
     const [search, setSearch] = useState("")
@@ -94,6 +98,9 @@ export default function AdminTelegramPage() {
             setChannel(cfg.channel_username)
             setScrapeSince(cfg.scrape_since.slice(0, 10))
             setMaxMessages(String(cfg.max_messages_per_run))
+            setSchedulerEnabled(cfg.scheduler_enabled)
+            setCronHour(String(cfg.cron_hour))
+            setCronMinute(String(cfg.cron_minute))
             setRuns(runRes.runs)
             await loadMessages()
         } catch (err: unknown) {
@@ -119,8 +126,14 @@ export default function AdminTelegramPage() {
                 channel_username: channel.replace(/^@/, ""),
                 scrape_since: scrapeSince,
                 max_messages_per_run: parseInt(maxMessages, 10) || 200,
+                scheduler_enabled: schedulerEnabled,
+                cron_hour: parseInt(cronHour, 10) || 0,
+                cron_minute: parseInt(cronMinute, 10) || 0,
             })
             setConfig(cfg)
+            setSchedulerEnabled(cfg.scheduler_enabled)
+            setCronHour(String(cfg.cron_hour))
+            setCronMinute(String(cfg.cron_minute))
         } catch (err: unknown) {
             setError(err instanceof Error ? err.message : "Failed to save config")
         } finally {
@@ -445,6 +458,58 @@ export default function AdminTelegramPage() {
                                 />
                             </div>
                         </div>
+                        <div className="rounded-md border p-3 space-y-3">
+                            <div className="flex items-center justify-between gap-4">
+                                <div>
+                                    <Label htmlFor="tg-scheduler-enabled" className="text-sm font-medium">
+                                        Daily scheduler
+                                    </Label>
+                                    <p className="text-xs text-muted-foreground">
+                                        Auto-scrape on a cron schedule (Africa/Addis_Ababa)
+                                    </p>
+                                </div>
+                                <Switch
+                                    id="tg-scheduler-enabled"
+                                    checked={schedulerEnabled}
+                                    onCheckedChange={setSchedulerEnabled}
+                                />
+                            </div>
+                            {schedulerEnabled && (
+                                <div className="grid grid-cols-2 gap-3">
+                                    <div className="space-y-1">
+                                        <Label htmlFor="tg-cron-hour" className="text-xs">Hour (0–23)</Label>
+                                        <Input
+                                            id="tg-cron-hour"
+                                            type="number"
+                                            min={0}
+                                            max={23}
+                                            value={cronHour}
+                                            onChange={(e) => setCronHour(e.target.value)}
+                                        />
+                                    </div>
+                                    <div className="space-y-1">
+                                        <Label htmlFor="tg-cron-minute" className="text-xs">Minute (0–59)</Label>
+                                        <Input
+                                            id="tg-cron-minute"
+                                            type="number"
+                                            min={0}
+                                            max={59}
+                                            value={cronMinute}
+                                            onChange={(e) => setCronMinute(e.target.value)}
+                                        />
+                                    </div>
+                                </div>
+                            )}
+                            {config?.next_run_time && (
+                                <p className="text-xs text-muted-foreground">
+                                    Next run:{" "}
+                                    <span className="font-medium text-foreground">
+                                        {new Date(config.next_run_time).toLocaleString()}
+                                    </span>
+                                </p>
+                            )}
+                        </div>
+
                         <div className="flex flex-wrap gap-2">
                             <Button
                                 size="sm"

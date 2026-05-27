@@ -7,6 +7,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from apps.api.routers import admin, chat, telegram_link
 from apps.api.scraper_scheduler import apply_scheduler_config
+from apps.api.telegram_scheduler import apply_telegram_scheduler_config
 
 logger = logging.getLogger(__name__)
 
@@ -14,14 +15,20 @@ logger = logging.getLogger(__name__)
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     app.state.scraper_scheduler = None
+    app.state.telegram_scheduler = None
     try:
         await apply_scheduler_config(app)
     except Exception:
         logger.exception("scraper_scheduler_startup_failed")
+    try:
+        await apply_telegram_scheduler_config(app)
+    except Exception:
+        logger.exception("telegram_scheduler_startup_failed")
     yield
-    scheduler = getattr(app.state, "scraper_scheduler", None)
-    if scheduler is not None:
-        scheduler.shutdown(wait=False)
+    for attr in ("scraper_scheduler", "telegram_scheduler"):
+        scheduler = getattr(app.state, attr, None)
+        if scheduler is not None:
+            scheduler.shutdown(wait=False)
 
 
 app = FastAPI(title="Awaqi API", version="1.0.0", lifespan=lifespan)

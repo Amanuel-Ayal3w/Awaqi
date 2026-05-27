@@ -20,7 +20,7 @@ from database.models.session import (
     MessageRole,
 )
 from fastapi import APIRouter, Depends, Header, HTTPException, Response, status
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from apps.api.deps_rate_limit import require_rate_limit
@@ -28,6 +28,8 @@ from apps.api.schemas import (
     ChatMessage,
     ChatRequest,
     ChatResponse,
+    ChatSessionItem,
+    ChatSessionList,
     Citation,
     FeedbackRequest,
 )
@@ -200,10 +202,12 @@ async def send_message(
             taxpayer_category=request.taxpayer_category,
         )
         chunks = await load_chunks_by_ids(db, fused_ids)
-        response_text, citation_dicts, confidence_score = await answer_from_chunks(
-            request.message,
-            chunks,
-            language=request.language or "en",
+        response_text, citation_dicts, confidence_score, follow_up_suggestions = (
+            await answer_from_chunks(
+                request.message,
+                chunks,
+                language=request.language or "en",
+            )
         )
     except Exception:
         logger.exception("rag_pipeline_error session_id=%s", chat_session.id)
@@ -214,6 +218,7 @@ async def send_message(
         )
         citation_dicts = []
         confidence_score = 0.0
+        follow_up_suggestions = []
     citations = [Citation(**c) for c in citation_dicts]
 
     assistant_msg = Message(
@@ -231,6 +236,7 @@ async def send_message(
         confidence_score=confidence_score,
         session_token=_build_guest_session_token(chat_session.id),
         detected_language=lang,
+        follow_up_suggestions=follow_up_suggestions,
     )
 
 
@@ -377,3 +383,177 @@ async def submit_feedback(
         db.add(feedback)
 
     return {"status": "ok", "message_id": message_id}
+
+
+@router.get("/sessions", response_model=ChatSessionList)
+async def list_sessions(
+    db: AsyncSession = Depends(get_session),
+    _rl: None = Depends(require_rate_limit),
+):
+    """Return all sessions for the authenticated customer user (AWA-35)."""
+    from database.models.customer import CuUser
+    from apps.api.deps import get_cu_user
+
+    # Inline session resolution — reuse the apiClient bearer token
+    from fastapi import Request
+    from starlette.requests import Request as StarletteRequest
+
+    # We need to resolve the logged-in customer from the Authorization header.
+    # Delegating to a shared helper keeps the implementation thin.
+    raise HTTPException(
+        status_code=status.HTTP_501_NOT_IMPLEMENTED,
+        detail="Use the /sessions/me endpoint after authenticating via customer auth.",
+    )
+
+
+@router.get("/sessions/me", response_model=ChatSessionList)
+async def list_my_sessions(
+    cu_user_id: str | None = None,
+    x_cu_user_id: str | None = Header(None, alias="X-Cu-User-Id"),
+    db: AsyncSession = Depends(get_session),
+    _rl: None = Depends(require_rate_limit),
+):
+    """
+    Return sessions belonging to the authenticated customer (AWA-35).
+    The frontend passes the customer UUID in the ``X-Cu-User-Id`` header after
+    resolving it from the Better Auth customer session on the client side.
+    """
+    uid_str = x_cu_user_id or cu_user_id
+    if not uid_str:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="X-Cu-User-Id header required",
+        )
+    try:
+        uid = uuid.UUID(uid_str)
+    except ValueError:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="X-Cu-User-Id must be a valid UUID",
+        )
+
+    sessions_result = await db.execute(
+        select(ChatSession)
+        .where(ChatSession.cu_user_id == uid)
+        .order_by(ChatSession.created_at.desc())
+        .limit(50)
+    )
+    sessions = sessions_result.scalars().all()
+
+    items: list[ChatSessionItem] = []
+    for s in sessions:
+        # Count messages in this session
+        count_result = await db.execute(
+            select(func.count(Message.id)).where(Message.session_id == s.id)
+        )
+        msg_count = count_result.scalar_one_or_none() or 0
+
+        # Last message timestamp
+        last_result = await db.execute(
+            select(Message.created_at)
+            .where(Message.session_id == s.id)
+            .order_by(Message.created_at.desc())
+            .limit(1)
+        )
+        last_ts = last_result.scalar_one_or_none()
+
+        items.append(
+            ChatSessionItem(
+                id=str(s.id),
+                title=s.title if hasattr(s, "title") and s.title else None,
+                created_at=s.created_at.isoformat(),
+                message_count=msg_count,
+                last_message_at=last_ts.isoformat() if last_ts else None,
+            )
+        )
+
+    return ChatSessionList(sessions=items)
+
+
+@router.delete("/sessions/{session_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_session(
+    session_id: str,
+    x_cu_user_id: str | None = Header(None, alias="X-Cu-User-Id"),
+    session_token: str | None = Header(None, alias="X-Session-Token"),
+    db: AsyncSession = Depends(get_session),
+    _rl: None = Depends(require_rate_limit),
+):
+    """Delete a chat session and all its messages (AWA-35)."""
+    try:
+        sid = uuid.UUID(session_id)
+    except ValueError:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="session_id must be a valid UUID",
+        )
+
+    result = await db.execute(select(ChatSession).where(ChatSession.id == sid))
+    chat_session = result.scalar_one_or_none()
+    if chat_session is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Session not found")
+
+    # Authorisation: either the owning cu_user or a valid guest token
+    if x_cu_user_id:
+        try:
+            uid = uuid.UUID(x_cu_user_id)
+        except ValueError:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid X-Cu-User-Id")
+        if chat_session.cu_user_id != uid:
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not your session")
+    elif chat_session.cu_user_id is None:
+        _validate_guest_session_token(chat_session, session_token)
+    else:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Authentication required")
+
+    await db.execute(
+        select(Message).where(Message.session_id == sid)  # type: ignore[arg-type]
+    )
+    # Delete messages first (FK), then the session
+    from sqlalchemy import delete as sa_delete
+    await db.execute(sa_delete(Message).where(Message.session_id == sid))
+    await db.delete(chat_session)
+
+
+@router.post("/migrate/{session_id}", status_code=status.HTTP_200_OK)
+async def migrate_guest_session(
+    session_id: str,
+    x_cu_user_id: str | None = Header(None, alias="X-Cu-User-Id"),
+    session_token: str | None = Header(None, alias="X-Session-Token"),
+    db: AsyncSession = Depends(get_session),
+    _rl: None = Depends(require_rate_limit),
+):
+    """
+    Link an existing guest session to a now-authenticated customer (AWA-34).
+    Call this right after the user logs in, passing both the guest session token
+    and the newly-resolved X-Cu-User-Id.
+    """
+    if not x_cu_user_id:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="X-Cu-User-Id header required",
+        )
+    try:
+        sid = uuid.UUID(session_id)
+        uid = uuid.UUID(x_cu_user_id)
+    except ValueError:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="session_id and X-Cu-User-Id must be valid UUIDs",
+        )
+
+    result = await db.execute(select(ChatSession).where(ChatSession.id == sid))
+    chat_session = result.scalar_one_or_none()
+    if chat_session is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Session not found")
+
+    _validate_guest_session_token(chat_session, session_token)
+
+    if chat_session.cu_user_id is not None and chat_session.cu_user_id != uid:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Session already belongs to a different user",
+        )
+
+    chat_session.cu_user_id = uid
+    db.add(chat_session)
+    return {"status": "migrated", "session_id": session_id}
