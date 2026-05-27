@@ -11,9 +11,12 @@ import asyncio
 import logging
 import os
 from functools import partial
-from typing import Any
+from typing import Any, TYPE_CHECKING
 
-from database.models.document import DocumentChunk
+if TYPE_CHECKING:  # pragma: no cover
+    from database.models.document import DocumentChunk
+else:  # keep import-time deps minimal for offline tools/scripts
+    DocumentChunk = Any  # type: ignore[misc,assignment]
 
 logger = logging.getLogger(__name__)
 

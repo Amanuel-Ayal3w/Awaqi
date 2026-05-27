@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
 import uuid
 from collections.abc import Sequence
 
@@ -38,11 +39,18 @@ def reciprocal_rank_fusion(
 
 
 def _embed_query(text: str) -> list[float]:
-    """Use OpenAI embeddings when OPENAI_API_KEY is available, else fall back to E5."""
+    """
+    Embed the retrieval query.
+
+    Project default is Gemini embeddings (see `ai_engine.embeddings.embed_query_sync`),
+    but we allow OpenAI embeddings when `OPENAI_API_KEY` is set for developer
+    convenience.
+    """
     if os.getenv("OPENAI_API_KEY"):
         from ai_engine.openai_embedder import embed_query_openai_sync
+
         return embed_query_openai_sync(text)
-    return _e5_embed_query_sync(text)
+    return embed_query_sync(text)
 
 
 async def retrieve_fused_chunk_ids(

@@ -1,0 +1,29 @@
+{
+  "test_cases": [
+    {
+      "question": "What is personal income tax in Ethiopia?",
+      "expected_answer": "Personal income tax is a tax levied on the earnings of individuals from employment, business, and other sources.",
+      "relevant_documents": []
+    },
+    {
+      "question": "What are the tax brackets for income tax?",
+      "expected_answer": "Tax brackets vary based on income levels and are determined by Ethiopian tax law.",
+      "relevant_documents": []
+    },
+    {
+      "question": "What deductions are allowed for income tax?",
+      "expected_answer": "Common deductions include professional expenses, insurance premiums, and charitable contributions.",
+      "relevant_documents": []
+    },
+    {
+      "question": "When must I file my tax return?",
+      "expected_answer": "Tax returns must be filed by the deadline specified in the tax calendar, typically at the end of the fiscal year.",
+      "relevant_documents": []
+    },
+    {
+      "question": "What is VAT and how is it calculated?",
+      "expected_answer": "VAT (Value Added Tax) is a consumption tax calculated as a percentage of the sale price of goods and services.",
+      "relevant_documents": []
+    }
+  ]
+}

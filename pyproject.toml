@@ -5,6 +5,7 @@ description = "Awaqi Monorepo"
 requires-python = ">=3.11"
 dependencies = [
     "dotenv>=0.9.9",
+    "ragas>=0.4.3",
     "telethon>=1.43.2",
 ]
 
