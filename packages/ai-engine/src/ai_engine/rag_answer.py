@@ -1,8 +1,8 @@
 """
 RAG answer synthesis with mandatory citations (AWA-27 groundwork).
 
-Uses Gemini when ``GOOGLE_API_KEY`` is set; otherwise a deterministic extractive summary
-so local dev still returns grounded text.
+Uses Gemini Flash (``GOOGLE_API_KEY``) for answer generation; falls back to a
+deterministic extractive summary so local dev still returns grounded text.
 """
 
 from __future__ import annotations
@@ -74,18 +74,18 @@ def _generate_gemini_sync(
     api_key = os.getenv("GOOGLE_API_KEY")
     if not api_key:
         raise RuntimeError("GOOGLE_API_KEY missing")
-    client = genai.Client(api_key=api_key)
     model = os.getenv("GEMINI_CHAT_MODEL", "gemini-2.0-flash")
+    client = genai.Client(api_key=api_key)
     prompt = (
-        "You are Awaqi, an assistant for Ethiopian tax and Ministry of Revenue materials.\n"
-        f"Preferred answer language hint: {language}.\n"
+        "You are Awaqi, an assistant for Ethiopian tax and Ministry of Revenue materials. "
+        f"Preferred answer language hint: {language}. "
         "Answer ONLY using the numbered passages in CONTEXT. After each sentence that uses a passage, "
-        "add a citation marker like [1] matching the passage number.\n"
+        "add a citation marker like [1] matching the passage number. "
         "If CONTEXT is insufficient, say so briefly.\n\n"
-        f"CONTEXT:\n{context}\n\nQUESTION:\n{user_query.strip()}\n"
+        f"CONTEXT:\n{context}\n\nQUESTION:\n{user_query.strip()}"
     )
-    resp = client.models.generate_content(model=model, contents=prompt)
-    text = (getattr(resp, "text", None) or "").strip()
+    response = client.models.generate_content(model=model, contents=prompt)
+    text = (response.text or "").strip()
     if not text:
         return _extractive_answer(user_query, chunks)
     return text

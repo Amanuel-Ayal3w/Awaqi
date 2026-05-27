@@ -37,6 +37,11 @@ def reciprocal_rank_fusion(
     return ordered[:top_n]
 
 
+def _embed_query(text: str) -> list[float]:
+    """Embed user queries via the unified embedding backend."""
+    return embed_query_sync(text)
+
+
 async def retrieve_fused_chunk_ids(
     db: AsyncSession,
     user_query: str,
@@ -50,7 +55,7 @@ async def retrieve_fused_chunk_ids(
     q_for_vec = build_retrieval_query_text(user_query, taxpayer_category=taxpayer_category)
 
     def _embed() -> list[float]:
-        return embed_query_sync(q_for_vec)
+        return _embed_query(q_for_vec)
 
     vec_task = asyncio.to_thread(_embed)
     bm25_task = bm25_search_chunk_ids(
