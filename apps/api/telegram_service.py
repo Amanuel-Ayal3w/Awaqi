@@ -4,17 +4,25 @@ from __future__ import annotations
 
 import logging
 import os
+import uuid
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import date, datetime, timezone
 
-import uuid
-
 from ai_engine.ingest import ingest_bytes_for_document
-from ai_engine.scraper.storage import delete_storage_file, guess_media_type, read_document_file
+from ai_engine.scraper.storage import (
+    delete_storage_file,
+    guess_media_type,
+    read_document_file,
+)
 from ai_engine.scraper.telegram_scraper import run_telegram_scrape_cycle
 from database.db import AsyncSessionLocal
 from database.models.document import Document, DocumentChunk, DocumentStatus
-from database.models.telegram import TelegramMessage, TelegramScrapeRun, TelegramScraperConfig
+from database.models.telegram import (
+    TelegramMessage,
+    TelegramScraperConfig,
+    TelegramScrapeRun,
+)
 from sqlalchemy import delete, func, or_, select
 
 logger = logging.getLogger(__name__)
@@ -190,6 +198,71 @@ async def execute_telegram_scrape_run(trigger: str) -> dict[str, int]:
         )
         run = result.scalar_one()
         run.status = status
+        run.finished_at = datetime.now(timezone.utc)
+        run.stats = stats
+        run.error_message = error_message
+        await db.commit()
+
+    return stats
+
+
+async def _execute_telegram_run_with_progress(
+    trigger: str,
+    channel_username: str | None,
+    scrape_since: str | None,
+    max_messages: int | None,
+    on_progress: Callable[[int, int, str], None] | None,
+    message_ids: list[int] | None = None,
+) -> dict[str, int]:
+    """Low-level: run cycle with optional progress callback + persist run record."""
+    settings = await get_telegram_settings()
+    run_id = None
+    async with AsyncSessionLocal() as db:
+        run = TelegramScrapeRun(
+            trigger=trigger,
+            status="running",
+            started_at=datetime.now(timezone.utc),
+        )
+        db.add(run)
+        await db.commit()
+        await db.refresh(run)
+        run_id = run.id
+
+    stats: dict[str, int] = {
+        "messages_seen": 0,
+        "messages_skipped": 0,
+        "documents_inserted": 0,
+        "documents_updated": 0,
+        "errors": 0,
+        "text_posts": 0,
+        "pdf_posts": 0,
+        "pptx_posts": 0,
+        "image_posts": 0,
+        "unsupported": 0,
+    }
+    error_message: str | None = None
+    run_status = "success"
+    try:
+        stats = await run_telegram_scrape_cycle(
+            channel_username=channel_username or settings.channel_username,
+            scrape_since=scrape_since or settings.scrape_since,
+            max_messages=max_messages if max_messages is not None else settings.max_messages_per_run,
+            message_ids=message_ids,
+            run_id=run_id,
+            on_progress=on_progress,
+        )
+    except Exception as e:
+        logger.exception("telegram_scrape_run_failed trigger=%s", trigger)
+        run_status = "failed"
+        error_message = str(e)[:2000]
+        stats["errors"] = stats.get("errors", 0) + 1
+
+    async with AsyncSessionLocal() as db:
+        result = await db.execute(
+            select(TelegramScrapeRun).where(TelegramScrapeRun.id == run_id)
+        )
+        run = result.scalar_one()
+        run.status = run_status
         run.finished_at = datetime.now(timezone.utc)
         run.stats = stats
         run.error_message = error_message

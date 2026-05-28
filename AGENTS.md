@@ -50,7 +50,37 @@ cd apps/web && npm run dev
 - Python: `uv run ruff check .` (pre-existing import-sorting warnings exist in `apps/api/`)
 - TypeScript: `cd apps/web && npx tsc --noEmit`
 - No ESLint config is set up yet; `npm run lint` triggers an interactive first-time setup prompt — avoid it in CI.
-- No automated test files exist in the repo yet.
+
+### Testing
+
+See [docs/TESTING.md](docs/TESTING.md) for the full guide.
+
+| Command | What it runs |
+|---------|----------------|
+| `make test-unit` | Python unit tests (no DB) |
+| `make test-integration` | Python API tests (`awaqi_db_test`) |
+| `make test` | All Python tests |
+| `make test-web` | Vitest (frontend unit) |
+| `make test-e2e` | Playwright (browser + API smoke) |
+| `make check` | lint + Python tests + Vitest + Next build |
+
+E2E uses **Playwright** (not Cypress/Selenium). Install browsers once: `cd apps/web && npx playwright install chromium`.
+
+### Starting the RQ worker (from repo root)
+
+Scraping, ingestion, and notification jobs run as background RQ jobs. Start the worker alongside the API:
+```bash
+uv run rq worker --url redis://localhost:6379/0 scraper ingest notification
+```
+The worker processes three queues: `scraper` (MoR + Telegram scraping), `ingest` (document ingestion after upload), and `notification` (proactive email/SMS checks).
+
+### Queue dashboard (rq-dashboard)
+
+When running with Docker Compose, rq-dashboard is available at **http://localhost:9181**.
+To start just Redis + rq-dashboard:
+```bash
+docker compose -f docker/docker-compose.redis.yml up -d
+```
 
 ### Gotchas
 
@@ -59,3 +89,6 @@ cd apps/web && npm run dev
 - The AI-engine RAG pipeline is a placeholder — chat returns a stub response with `confidence_score: 0.0`.
 - The `docker-compose.yml` has a `version: '3.8'` attribute that triggers a deprecation warning (harmless).
 - The `Makefile` `check` target runs `cd apps/web && npm run build` (Next.js build), not lint-only.
+- Scrape endpoints (`POST /v1/admin/scrape`, `POST /v1/admin/telegram/scrape`) now return `AdminJobEnqueued` with a `job_id`. The RQ worker must be running to process jobs.
+- Progress SSE endpoint: `GET /v1/admin/progress/{job_id}` — streams `{pct, step, status, job_id}` events. Auth via cookie or `?token=` query param.
+- Notification endpoints: `GET/PATCH /v1/admin/notifications/config`, `POST /v1/admin/notifications/trigger`, `GET /v1/admin/notifications/logs`. Requires `MAILTRAP_*` and `GEEZSMS_TOKEN` env vars. Run `cd packages/database && uv run alembic upgrade head` after pulling to create the `notification_config` and `notification_logs` tables.

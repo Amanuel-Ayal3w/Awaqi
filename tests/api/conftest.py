@@ -3,10 +3,9 @@ API-test fixtures that intercept heavy AI calls so integration tests stay
 fast and never depend on real ML models or external APIs.
 
 embed_passages_sync is patched for every test in this directory: upload and
-ingest-text endpoints call it internally, and it returns E5 (1024-d) vectors
-while the DB column expects 1536-d (Gemini).  Replacing it with a no-op that
-yields 1536-d zero vectors fixes the dimension mismatch without changing any
-production code.
+ingest-text endpoints call it internally.  The DB now stores native Gemini
+3072-d vectors, so tests use fixed-size 3072-d zero vectors to avoid depending
+on external embedding APIs.
 
 Mark a test with @pytest.mark.real_embedder to skip the patch.
 """
@@ -16,7 +15,7 @@ from unittest.mock import patch
 
 import pytest
 
-EMBEDDING_DIM = 1536
+EMBEDDING_DIM = 3072
 
 
 @pytest.fixture(autouse=True)

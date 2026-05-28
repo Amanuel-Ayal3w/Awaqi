@@ -33,7 +33,6 @@ from ai_engine.document_processor import extract_bytes
 from ai_engine.e5_embedder import get_tokenizer
 from ai_engine.embeddings import EMBEDDING_DIM, embed_passages_sync
 from ai_engine.extractor import PageText
-from ai_engine.openai_embedder import embed_passages_openai_sync
 from ai_engine.heuristics import (
     guess_article_number_from_text,
     guess_proclamation_number,
@@ -96,7 +95,7 @@ async def _ingest_from_pages(
 
     await _persist_stage(db, doc, _stage_value(ProcessingStage.EMBEDDING))
     texts = [c.content for c in chunks]
-    embeddings = await asyncio.to_thread(embed_passages_openai_sync, texts)
+    embeddings = await asyncio.to_thread(embed_passages_sync, texts)
 
     if len(embeddings) != len(chunks):
         raise RuntimeError("Embedding count does not match chunk count")
@@ -116,6 +115,7 @@ async def _ingest_from_pages(
     for chunk, embedding in zip(chunks, embeddings):
         chunk_uuid = uuid.uuid4()
         article = guess_article_number_from_text(chunk.content)
+        enforcement = getattr(doc, "enforcement_status", None)
         meta = {
             **chunk.metadata,
             "document_id": str(doc.id),
@@ -129,6 +129,7 @@ async def _ingest_from_pages(
             else "",
             "language": doc.language,
             "created_at": now.isoformat(),
+            "enforcement_status": str(enforcement) if enforcement else "in_effect",
         }
         db.add(
             DocumentChunk(

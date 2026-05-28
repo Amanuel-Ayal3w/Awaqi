@@ -36,6 +36,12 @@ MANIFEST
 pip-log.txt
 pip-delete-this-directory.txt
 
+# Playwright / Vitest artifacts
+test-results/
+playwright-report/
+blob-report/
+playwright/.cache/
+
 # Unit test / coverage reports
 htmlcov/
 .tox/

@@ -38,6 +38,7 @@ import {
     SelectTrigger,
     SelectValue,
 } from "@/components/ui/select"
+import { JobProgress } from "@/components/ui/job-progress"
 import {
     DropdownMenu,
     DropdownMenuContent,
@@ -141,24 +142,40 @@ export default function AdminTelegramPage() {
         }
     }
 
+    const [tgJobId, setTgJobId] = useState<string | null>(null)
+    const [messageIdsInput, setMessageIdsInput] = useState("")
+
+    const parseMessageIds = (): number[] => {
+        return messageIdsInput
+            .split(/[\s,;]+/)
+            .map((s) => s.trim())
+            .filter(Boolean)
+            .map(Number)
+            .filter((n) => Number.isFinite(n) && n > 0)
+    }
+
     const handleScrape = async () => {
         setIsScraping(true)
         setError(null)
         setLastStats(null)
+        setTgJobId(null)
         try {
-            const result = await adminApi.triggerTelegramScrape()
-            const s = result.stats
-            setLastStats(
-                `seen ${s.messages_seen}, +${s.documents_inserted} docs, ` +
-                    `${s.text_posts} text, ${s.pdf_posts} pdf, ${s.pptx_posts} pptx, ` +
-                    `${s.image_posts} images, ${s.errors} errors`
-            )
-            await loadMessages()
+            const ids = parseMessageIds()
+            const result = await adminApi.triggerTelegramScrape(ids.length > 0 ? ids : undefined)
+            setTgJobId(result.job_id)
         } catch (err: unknown) {
             setError(err instanceof Error ? err.message : "Scrape failed")
-        } finally {
             setIsScraping(false)
         }
+    }
+
+    const handleTgJobDone = async (finalStatus: "done" | "failed") => {
+        setIsScraping(false)
+        setTgJobId(null)
+        if (finalStatus === "done") {
+            setLastStats("Scrape complete — refreshing messages…")
+        }
+        await loadMessages()
     }
 
     const handleClearAll = async () => {
@@ -510,6 +527,26 @@ export default function AdminTelegramPage() {
                             )}
                         </div>
 
+                        {/* Message ID targeted scraping */}
+                        <div className="space-y-2">
+                            <Label className="flex items-center gap-1.5">
+                                Targeted message IDs
+                                <span className="text-xs font-normal text-muted-foreground">(optional — leave blank for full scan)</span>
+                            </Label>
+                            <textarea
+                                className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm shadow-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring min-h-[72px] resize-y font-mono"
+                                placeholder={"Enter message IDs separated by spaces, commas, or new lines\ne.g. 1234 5678 9012"}
+                                value={messageIdsInput}
+                                onChange={(e) => setMessageIdsInput(e.target.value)}
+                                disabled={isScraping}
+                            />
+                            {parseMessageIds().length > 0 && (
+                                <p className="text-xs text-muted-foreground">
+                                    Will scrape <span className="font-medium text-foreground">{parseMessageIds().length}</span> specific message{parseMessageIds().length !== 1 ? "s" : ""} instead of the full scan.
+                                </p>
+                            )}
+                        </div>
+
                         <div className="flex flex-wrap gap-2">
                             <Button
                                 size="sm"
@@ -534,7 +571,7 @@ export default function AdminTelegramPage() {
                                 ) : (
                                     <Play className="mr-2 h-4 w-4" />
                                 )}
-                                Run scrape
+                                {parseMessageIds().length > 0 ? `Scrape ${parseMessageIds().length} messages` : "Run scrape"}
                             </Button>
                             <Button
                                 size="sm"
@@ -550,6 +587,15 @@ export default function AdminTelegramPage() {
                                 Clear tracked posts
                             </Button>
                         </div>
+                        {tgJobId && (
+                            <div className="mt-4">
+                                <JobProgress
+                                    jobId={tgJobId}
+                                    label="Telegram scraping…"
+                                    onDone={handleTgJobDone}
+                                />
+                            </div>
+                        )}
                     </CardContent>
                 </Card>
 

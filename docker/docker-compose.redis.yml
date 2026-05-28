@@ -1,9 +1,12 @@
-# Redis only (local dev / infra).
+# Redis + RQ Dashboard (local dev / infra).
 #
 # From repo root:
 #   docker compose -f docker/docker-compose.redis.yml up -d
 #
 # Full stack still uses docker-compose.yml, which includes this file.
+#
+# RQ Dashboard is available at http://localhost:9181
+# It shows all queues (scraper, ingest), jobs, workers, and failed jobs.
 
 services:
   redis:
@@ -18,6 +21,18 @@ services:
       interval: 10s
       timeout: 3s
       retries: 5
+    restart: unless-stopped
+
+  rq-dashboard:
+    image: eoranged/rq-dashboard:latest
+    container_name: awaqi-rq-dashboard
+    ports:
+      - "${RQ_DASHBOARD_PORT:-9181}:9181"
+    environment:
+      RQ_DASHBOARD_REDIS_URL: "redis://redis:6379/0"
+    depends_on:
+      redis:
+        condition: service_healthy
     restart: unless-stopped
 
 volumes:

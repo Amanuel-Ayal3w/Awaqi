@@ -10,6 +10,7 @@ import { Separator } from "@/components/ui/separator"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { authClient } from "@/lib/auth-client"
 import SystemLogsPage from "./logs/page"
+import { VectorStoreSection } from "./vector-store-section"
 
 export default function SettingsPage() {
     const { data: session } = authClient.useSession()
@@ -36,6 +37,7 @@ export default function SettingsPage() {
                 <TabsList>
                     <TabsTrigger value="profile">Profile</TabsTrigger>
                     <TabsTrigger value="general">General</TabsTrigger>
+                    <TabsTrigger value="vector-store">Vector Store</TabsTrigger>
                     <TabsTrigger value="logs">System Logs</TabsTrigger>
                 </TabsList>
                 
@@ -123,6 +125,10 @@ export default function SettingsPage() {
                             <Button>Apply Settings</Button>
                         </CardFooter>
                     </Card>
+                </TabsContent>
+
+                <TabsContent value="vector-store" className="space-y-4">
+                    <VectorStoreSection />
                 </TabsContent>
 
                 <TabsContent value="logs" className="space-y-4">

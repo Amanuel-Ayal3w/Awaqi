@@ -136,7 +136,7 @@ class TestExtractiveAnswer:
 class TestAnswerFromChunks:
     async def test_no_chunks_returns_fallback_text(self, monkeypatch):
         monkeypatch.delenv("GOOGLE_API_KEY", raising=False)
-        text, cites, score = await answer_from_chunks("q?", [], language="en")
+        text, cites, score, _follow_ups = await answer_from_chunks("q?", [], language="en")
         assert "knowledge base" in text.lower()
         assert cites == []
         assert score == 0.0
@@ -144,7 +144,7 @@ class TestAnswerFromChunks:
     async def test_with_chunks_uses_extractive_when_no_api_key(self, monkeypatch):
         monkeypatch.delenv("GOOGLE_API_KEY", raising=False)
         ch = _make_chunk("VAT is applied at 15%.", {"document_title": "VAT Proc"})
-        text, cites, score = await answer_from_chunks("VAT rate?", [ch], language="en")
+        text, cites, score, _follow_ups = await answer_from_chunks("VAT rate?", [ch], language="en")
         assert text
         assert len(cites) == 1
         assert score > 0.0
@@ -152,11 +152,11 @@ class TestAnswerFromChunks:
     async def test_returns_citations_for_each_chunk(self, monkeypatch):
         monkeypatch.delenv("GOOGLE_API_KEY", raising=False)
         chunks = [_make_chunk(f"passage {i}") for i in range(3)]
-        _, cites, _ = await answer_from_chunks("question", chunks, language="en")
+        _, cites, _, _follow_ups = await answer_from_chunks("question", chunks, language="en")
         assert len(cites) == 3
 
     async def test_confidence_positive_with_chunks(self, monkeypatch):
         monkeypatch.delenv("GOOGLE_API_KEY", raising=False)
         ch = _make_chunk("Tax info here.")
-        _, _, score = await answer_from_chunks("tax?", [ch], language="en")
+        _, _, score, _follow_ups = await answer_from_chunks("tax?", [ch], language="en")
         assert score > 0.0

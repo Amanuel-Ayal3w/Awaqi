@@ -1,17 +1,25 @@
 "use client"
 
-import { useCallback, useEffect, useState } from "react"
+import { useCallback, useEffect, useMemo, useState } from "react"
 import { useLocale } from "next-intl"
 import Link from "next/link"
 import { ColumnDef } from "@tanstack/react-table"
 import { DataTable } from "@/components/ui/data-table"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
-import { RefreshCw, ClipboardCheck, AlertTriangle, FileSearch } from "lucide-react"
+import { Input } from "@/components/ui/input"
+import { RefreshCw, ClipboardCheck, AlertTriangle, FileSearch, Search, Filter, Globe, Upload } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { adminApi } from "@/lib/api"
 import { adminDocumentReviewPath } from "@/lib/admin-routes"
 import type { AdminDocumentItem } from "@/types/api"
+import {
+    Select,
+    SelectContent,
+    SelectItem,
+    SelectTrigger,
+    SelectValue,
+} from "@/components/ui/select"
 
 const REVIEW_REASON_LABELS: Record<string, string> = {
     low_ocr_confidence: "Low OCR confidence",
@@ -27,6 +35,8 @@ function reviewReasonLabel(reason: string | null | undefined): string {
 }
 
 type ReviewRow = AdminDocumentItem & { review_reason: string }
+type SourceFilter = "all" | "scraped" | "uploaded"
+type ReasonFilter = "all" | string
 
 export default function ReviewQueuePage() {
     const locale = useLocale()
@@ -34,6 +44,9 @@ export default function ReviewQueuePage() {
     const [total, setTotal] = useState(0)
     const [isLoading, setIsLoading] = useState(true)
     const [error, setError] = useState<string | null>(null)
+    const [search, setSearch] = useState("")
+    const [sourceFilter, setSourceFilter] = useState<SourceFilter>("all")
+    const [reasonFilter, setReasonFilter] = useState<ReasonFilter>("all")
 
     const refresh = useCallback(async () => {
         setIsLoading(true)
@@ -60,6 +73,28 @@ export default function ReviewQueuePage() {
     useEffect(() => {
         void refresh()
     }, [refresh])
+
+    const allReasons = useMemo(() => {
+        const s = new Set<string>()
+        rows.forEach((r) => s.add(r.review_reason))
+        return Array.from(s)
+    }, [rows])
+
+    const filteredRows = useMemo(() => {
+        let data = rows
+        if (sourceFilter === "scraped") data = data.filter((r) => !!r.source_url)
+        if (sourceFilter === "uploaded") data = data.filter((r) => !r.source_url)
+        if (reasonFilter !== "all") data = data.filter((r) => r.review_reason === reasonFilter)
+        if (search.trim()) {
+            const q = search.toLowerCase()
+            data = data.filter(
+                (r) =>
+                    r.title.toLowerCase().includes(q) ||
+                    (r.source_url ?? "").toLowerCase().includes(q)
+            )
+        }
+        return data
+    }, [rows, sourceFilter, reasonFilter, search])
 
     const columns: ColumnDef<ReviewRow>[] = [
         {
@@ -167,6 +202,54 @@ export default function ReviewQueuePage() {
                 </div>
             )}
 
+            {/* Filters */}
+            {!isLoading && rows.length > 0 && (
+                <div className="flex flex-wrap items-center gap-3">
+                    <div className="relative flex-1 min-w-[200px] max-w-sm">
+                        <Search className="absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                        <Input
+                            placeholder="Search by title or URL…"
+                            value={search}
+                            onChange={(e) => setSearch(e.target.value)}
+                            className="pl-8"
+                        />
+                    </div>
+                    <div className="flex items-center gap-2">
+                        <Filter className="h-4 w-4 text-muted-foreground" />
+                        <Select value={sourceFilter} onValueChange={(v) => setSourceFilter(v as SourceFilter)}>
+                            <SelectTrigger className="w-[150px]">
+                                <SelectValue placeholder="All sources" />
+                            </SelectTrigger>
+                            <SelectContent>
+                                <SelectItem value="all">All sources</SelectItem>
+                                <SelectItem value="scraped">
+                                    <span className="flex items-center gap-1.5"><Globe className="h-3 w-3" />Scraped</span>
+                                </SelectItem>
+                                <SelectItem value="uploaded">
+                                    <span className="flex items-center gap-1.5"><Upload className="h-3 w-3" />Uploaded</span>
+                                </SelectItem>
+                            </SelectContent>
+                        </Select>
+                        <Select value={reasonFilter} onValueChange={setReasonFilter}>
+                            <SelectTrigger className="w-[200px]">
+                                <SelectValue placeholder="All reasons" />
+                            </SelectTrigger>
+                            <SelectContent>
+                                <SelectItem value="all">All reasons</SelectItem>
+                                {allReasons.map((r) => (
+                                    <SelectItem key={r} value={r}>
+                                        {reviewReasonLabel(r)}
+                                    </SelectItem>
+                                ))}
+                            </SelectContent>
+                        </Select>
+                    </div>
+                    <span className="text-sm text-muted-foreground ml-auto">
+                        {filteredRows.length} of {rows.length} items
+                    </span>
+                </div>
+            )}
+
             {!isLoading && rows.length === 0 && !error ? (
                 <div className="flex flex-col items-center justify-center gap-3 rounded-lg border border-dashed py-20 text-center">
                     <div className="rounded-full bg-green-100 p-4 dark:bg-green-900/30">
@@ -179,7 +262,7 @@ export default function ReviewQueuePage() {
                     </p>
                 </div>
             ) : (
-                <DataTable columns={columns} data={rows} />
+                <DataTable columns={columns} data={filteredRows} />
             )}
         </div>
     )

@@ -10,6 +10,17 @@ SOURCE_SYSTEM_TELEGRAM = "telegram"
 
 MIN_TELEGRAM_TEXT_CHARS = 15
 
+# ── Image relevance thresholds ────────────────────────────────────────────────
+# Images below MIN_IMAGE_SIZE_BYTES are almost certainly icons / emoji /
+# thumbnails — skip OCR entirely.
+MIN_IMAGE_SIZE_BYTES: int = 15_000
+
+# After OCR: require at least this many recognised words.
+MIN_IMAGE_WORDS: int = 8
+
+# After OCR: require this mean Tesseract confidence (0.0–1.0).
+MIN_IMAGE_CONFIDENCE: float = 0.20
+
 DOCUMENT_EXTENSIONS = {".pdf", ".pptx", ".docx", ".txt"}
 IMAGE_MIMES = frozenset(
     {
@@ -124,6 +135,41 @@ def classify_mime(mime: str | None, filename: str | None = None) -> TelegramAtta
         filename=filename,
         content_part=part,
     )
+
+
+def should_ingest_image(file_bytes: bytes) -> tuple[bool, str]:
+    """
+    Decide whether a Telegram image is worth ingesting.
+
+    Two-gate approach (fast → slow):
+      1. File-size gate — tiny images (< MIN_IMAGE_SIZE_BYTES) are icons /
+         thumbnails / emoji replacements; skip without running OCR.
+      2. OCR content gate — run Tesseract and reject images that yield
+         fewer than MIN_IMAGE_WORDS words or mean confidence < MIN_IMAGE_CONFIDENCE.
+
+    Returns:
+        (True, "")               — proceed with ingest
+        (False, skip_reason)     — skip; skip_reason is a short string suitable
+                                   for TelegramMessage.skip_reason
+    """
+    if len(file_bytes) < MIN_IMAGE_SIZE_BYTES:
+        return False, "image_too_small"
+
+    try:
+        from ai_engine.document_processor import ocr_image_bytes
+
+        text, confidence = ocr_image_bytes(file_bytes)
+        words = text.split()
+        if len(words) < MIN_IMAGE_WORDS:
+            return False, f"image_no_text({len(words)}w)"
+        if confidence < MIN_IMAGE_CONFIDENCE:
+            return False, f"image_low_confidence({confidence:.2f})"
+    except Exception:
+        # If OCR crashes (missing tesseract, etc.) let it through — the
+        # ingest pipeline will handle it gracefully.
+        return True, ""
+
+    return True, ""
 
 
 def detect_unsupported_media_label(mime: str | None, message) -> str:

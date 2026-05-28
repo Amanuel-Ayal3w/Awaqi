@@ -4,16 +4,28 @@ from __future__ import annotations
 
 import logging
 import os
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime, timezone
 
+from ai_engine.scraper.ethiodata_scraper import run_ethiodata_scrape_cycle
 from ai_engine.scraper.mor_api import default_seed_urls
+from ai_engine.scraper.mor_news_scraper import run_mor_news_scrape_cycle
+from ai_engine.scraper.mor_scraper import run_mor_scrape_cycle
 from ai_engine.web_scraper import WebScraper
 from database.db import AsyncSessionLocal
 from database.models.scraper import ScraperConfig, ScraperRun
 from sqlalchemy import select
 
 logger = logging.getLogger(__name__)
+
+
+def _merge_stats(*all_stats: dict[str, int]) -> dict[str, int]:
+    merged: dict[str, int] = {}
+    for stats in all_stats:
+        for key, value in stats.items():
+            merged[key] = merged.get(key, 0) + int(value)
+    return merged
 
 
 @dataclass
@@ -141,10 +153,13 @@ async def execute_scrape_run(trigger: str) -> dict[str, int]:
     }
     error_message: str | None = None
     try:
-        stats = await WebScraper().scan_for_updates(
+        mor_stats = await WebScraper().scan_for_updates(
             seed_urls=settings.seed_urls,
             max_links=settings.max_links,
         )
+        ethiodata_stats = await run_ethiodata_scrape_cycle(max_articles=settings.max_links)
+        mor_news_stats = await run_mor_news_scrape_cycle(max_links=settings.max_links)
+        stats = _merge_stats(mor_stats, ethiodata_stats, mor_news_stats)
         status = "success"
     except Exception as e:
         logger.exception("scrape_run_failed trigger=%s", trigger)
@@ -156,6 +171,86 @@ async def execute_scrape_run(trigger: str) -> dict[str, int]:
         result = await db.execute(select(ScraperRun).where(ScraperRun.id == run_id))
         run = result.scalar_one()
         run.status = status
+        run.finished_at = datetime.now(timezone.utc)
+        run.stats = stats
+        run.error_message = error_message
+        await db.commit()
+
+    return stats
+
+
+async def _execute_scrape_run_with_progress(
+    trigger: str,
+    seed_urls: list[str] | None,
+    max_links: int | None,
+    on_progress: Callable[[int, int, str], None] | None,
+) -> dict[str, int]:
+    """Low-level: run cycle with optional progress callback + persist run record."""
+    settings = await get_scraper_settings()
+    run_id = None
+    async with AsyncSessionLocal() as db:
+        run = ScraperRun(
+            trigger=trigger,
+            status="running",
+            started_at=datetime.now(timezone.utc),
+        )
+        db.add(run)
+        await db.commit()
+        await db.refresh(run)
+        run_id = run.id
+
+    effective_seeds = seed_urls if seed_urls is not None else settings.seed_urls
+    effective_max = max_links if max_links is not None else settings.max_links
+
+    stats: dict[str, int] = {"discovered": 0, "inserted": 0, "skipped": 0, "errors": 0}
+    error_message: str | None = None
+    try:
+        def _phase_progress(start: int, span: int, pct: int) -> int:
+            return start + int((pct / 100.0) * span)
+
+        def _mor_progress(cur: int, total: int, step: str) -> None:
+            if on_progress is None:
+                return
+            pct = 0 if total <= 0 else int((cur / total) * 100)
+            on_progress(_phase_progress(0, 55, pct), 100, f"MoR laws: {step}")
+
+        def _ethiodata_progress(cur: int, total: int, step: str) -> None:
+            if on_progress is None:
+                return
+            pct = 0 if total <= 0 else int((cur / total) * 100)
+            on_progress(_phase_progress(55, 25, pct), 100, step)
+
+        def _mor_news_progress(cur: int, total: int, step: str) -> None:
+            if on_progress is None:
+                return
+            pct = 0 if total <= 0 else int((cur / total) * 100)
+            on_progress(_phase_progress(80, 20, pct), 100, step)
+
+        mor_stats = await run_mor_scrape_cycle(
+            seed_urls=effective_seeds,
+            max_links=effective_max,
+            on_progress=_mor_progress if on_progress is not None else None,
+        )
+        ethiodata_stats = await run_ethiodata_scrape_cycle(
+            max_articles=effective_max,
+            on_progress=_ethiodata_progress if on_progress is not None else None,
+        )
+        mor_news_stats = await run_mor_news_scrape_cycle(
+            max_links=effective_max,
+            on_progress=_mor_news_progress if on_progress is not None else None,
+        )
+        stats = _merge_stats(mor_stats, ethiodata_stats, mor_news_stats)
+        run_status = "success"
+    except Exception as e:
+        logger.exception("scrape_run_failed trigger=%s", trigger)
+        run_status = "failed"
+        error_message = str(e)[:2000]
+        stats["errors"] = stats.get("errors", 0) + 1
+
+    async with AsyncSessionLocal() as db:
+        result = await db.execute(select(ScraperRun).where(ScraperRun.id == run_id))
+        run = result.scalar_one()
+        run.status = run_status
         run.finished_at = datetime.now(timezone.utc)
         run.stats = stats
         run.error_message = error_message

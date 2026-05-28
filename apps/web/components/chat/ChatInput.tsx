@@ -2,7 +2,7 @@
 
 import React, { useState, useRef, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
-import { Send, Plus, Image as ImageIcon, FileText, X, FileUp, Sparkles } from 'lucide-react';
+import { Send, Plus, Image as ImageIcon, FileText, X, FileUp, Sparkles, Zap, Bot } from 'lucide-react';
 import {
     DropdownMenu,
     DropdownMenuContent,
@@ -11,14 +11,17 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { useTranslations } from 'next-intl';
 import { Attachment } from './types';
+import type { AssistantMode } from '@/types/api';
 import { cn } from '@/lib/utils';
 
 interface ChatInputProps {
     onSend: (content: string, attachments: Attachment[]) => void;
     disabled?: boolean;
+    mode?: AssistantMode;
+    onModeChange?: (mode: AssistantMode) => void;
 }
 
-export function ChatInput({ onSend, disabled }: ChatInputProps) {
+export function ChatInput({ onSend, disabled, mode = 'basic', onModeChange }: ChatInputProps) {
     const [input, setInput] = useState('');
     const [attachments, setAttachments] = useState<Attachment[]>([]);
     const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -120,6 +123,62 @@ export function ChatInput({ onSend, disabled }: ChatInputProps) {
                 )}
 
                 <div className="flex items-end w-full gap-2">
+                    {/* Mode selector */}
+                    {onModeChange && (
+                        <DropdownMenu>
+                            <DropdownMenuTrigger asChild>
+                                <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    className={cn(
+                                        "h-10 shrink-0 rounded-full px-3 text-xs font-medium",
+                                        mode === 'awaqi_max'
+                                            ? "bg-primary/10 text-primary hover:bg-primary/15"
+                                            : "text-muted-foreground hover:text-foreground hover:bg-muted/50"
+                                    )}
+                                    disabled={disabled}
+                                    aria-label="Assistant mode"
+                                >
+                                    {mode === 'awaqi_max' ? (
+                                        <Zap className="mr-1.5 h-3.5 w-3.5" />
+                                    ) : (
+                                        <Bot className="mr-1.5 h-3.5 w-3.5" />
+                                    )}
+                                    <span className="hidden sm:inline">
+                                        {mode === 'awaqi_max' ? 'Awaqi Max' : 'Basic'}
+                                    </span>
+                                </Button>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent align="start" className="w-72 p-1 rounded-xl shadow-lg border-border/60">
+                                <DropdownMenuItem
+                                    onClick={() => onModeChange('basic')}
+                                    className="rounded-lg cursor-pointer items-start gap-2 py-2"
+                                >
+                                    <Bot className="mt-0.5 h-4 w-4" />
+                                    <div className="flex flex-col">
+                                        <span className="text-sm font-medium">Basic</span>
+                                        <span className="text-[11px] text-muted-foreground">
+                                            Single-pass RAG over the indexed tax KB. Fast and predictable.
+                                        </span>
+                                    </div>
+                                </DropdownMenuItem>
+                                <DropdownMenuItem
+                                    onClick={() => onModeChange('awaqi_max')}
+                                    className="rounded-lg cursor-pointer items-start gap-2 py-2"
+                                >
+                                    <Zap className="mt-0.5 h-4 w-4 text-primary" />
+                                    <div className="flex flex-col">
+                                        <span className="text-sm font-medium">Awaqi Max</span>
+                                        <span className="text-[11px] text-muted-foreground">
+                                            ReAct agent: iterative KB search + Ethiopian-grounded web
+                                            search. Higher quality on hard questions, slower.
+                                        </span>
+                                    </div>
+                                </DropdownMenuItem>
+                            </DropdownMenuContent>
+                        </DropdownMenu>
+                    )}
+
                     {/* Attachment Menu */}
                     <DropdownMenu>
                         <DropdownMenuTrigger asChild>

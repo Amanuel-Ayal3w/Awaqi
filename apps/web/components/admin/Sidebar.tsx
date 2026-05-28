@@ -20,6 +20,7 @@ import {
     FolderTree,
     Upload,
     MessageSquare,
+    GaugeCircle,
 } from "lucide-react"
 import { useEffect, useMemo, useState, type ComponentType } from "react"
 import { Button } from "@/components/ui/button"
@@ -139,6 +140,12 @@ export function AdminSidebar() {
                 title: "Analytics",
                 href: `/${locale}/admin/analytics`,
                 icon: BarChart3,
+                badge: null,
+            },
+            {
+                title: "Evaluation",
+                href: `/${locale}/admin/evaluation`,
+                icon: GaugeCircle,
                 badge: null,
             },
             {

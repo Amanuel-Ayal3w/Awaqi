@@ -5,6 +5,7 @@ import os
 import uuid
 from typing import List
 
+from ai_engine.agent.react_agent import run_awaqi_max, trace_to_json
 from ai_engine.hybrid_retrieval import load_chunks_by_ids, retrieve_fused_chunk_ids
 from ai_engine.query_nlu import detect_query_language
 from ai_engine.rag_answer import answer_from_chunks
@@ -195,22 +196,60 @@ async def send_message(
         chat_session.id,
     )
 
+    agent_trace_payload: list[dict] | None = None
+    web_citations_payload: list[dict] | None = None
+
     try:
-        fused_ids = await retrieve_fused_chunk_ids(
-            db,
-            request.message,
-            taxpayer_category=request.taxpayer_category,
-        )
-        chunks = await load_chunks_by_ids(db, fused_ids)
-        response_text, citation_dicts, confidence_score, follow_up_suggestions = (
-            await answer_from_chunks(
+        if request.mode == "awaqi_max":
+            agent_result = await run_awaqi_max(
+                db,
                 request.message,
-                chunks,
                 language=request.language or "en",
+                taxpayer_category=request.taxpayer_category,
+                retrieval_mode="optimized",
             )
+            response_text = agent_result.answer
+            citation_dicts = agent_result.citations
+            confidence_score = agent_result.confidence
+            follow_up_suggestions = []
+            agent_trace_payload = trace_to_json(agent_result.trace)
+            web_citations_payload = agent_result.web_citations or None
+        else:
+            fused_ids = await retrieve_fused_chunk_ids(
+                db,
+                request.message,
+                taxpayer_category=request.taxpayer_category,
+            )
+            chunks = await load_chunks_by_ids(db, fused_ids)
+            response_text, citation_dicts, confidence_score, follow_up_suggestions = (
+                await answer_from_chunks(
+                    request.message,
+                    chunks,
+                    language=request.language or "en",
+                )
+            )
+    except Exception as e:
+        logger.exception(
+            "rag_pipeline_error session_id=%s exception=%s", chat_session.id, repr(e)
         )
-    except Exception:
-        logger.exception("rag_pipeline_error session_id=%s", chat_session.id)
+        # A failed SELECT/DB call in retrieval leaves the transaction aborted.
+        # Roll back before attempting to persist fallback assistant output.
+        await db.rollback()
+        chat_session = await _get_or_create_session(
+            request.session_id,
+            request.language or "en",
+            session_token,
+            db,
+            channel=channel,
+            cu_user_id=cu_user_id,
+        )
+        user_msg = Message(
+            session_id=chat_session.id,
+            role=MessageRole.USER,
+            content=request.message,
+        )
+        db.add(user_msg)
+        await db.flush()
         response_text = (
             "The knowledge base search is temporarily unavailable "
             "(Gemini embeddings may be unavailable — check GOOGLE_API_KEY). "
@@ -219,6 +258,7 @@ async def send_message(
         citation_dicts = []
         confidence_score = 0.0
         follow_up_suggestions = []
+   
     citations = [Citation(**c) for c in citation_dicts]
 
     assistant_msg = Message(
@@ -237,6 +277,9 @@ async def send_message(
         session_token=_build_guest_session_token(chat_session.id),
         detected_language=lang,
         follow_up_suggestions=follow_up_suggestions,
+        mode=request.mode,
+        agent_trace=agent_trace_payload,
+        web_citations=web_citations_payload,
     )
 
 

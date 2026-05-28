@@ -1,0 +1,839 @@
+﻿SupportBot AI  Next-Gen Revenue Customer Service  |  2025
+
+
+
+
+College of Technology and Built Environment
+School of Information Technology and Engineering
+Department of IT/SE Eng.
+
+
+LLM-Based Support Bot for Ethiopian Revenue Authority
+to enhance information desk service for tax payers and business owners
+
+
+Software Design Specification
+(Final Updated Version — Incorporating Implementation Amendments)
+
+
+Team Members
+1. Abdurahman Mohammed …ATE/8901/13
+2. Amanuel Ayalew…………….ATE/3871/13
+3. Basliel selamu ...................ATE/6761/13
+4. Bethel Wondowssen............ATE/8712/13
+5. Diborah Dereje...................ATE/1712/13
+Advisor: Mr. Daniel
+
+
+
+
+Original Date: Dec 27, 2025  |  Addendum Date: May 27, 2026
+________________
+
+
+Revision History
+Date
+	Description
+	Author
+	Comments
+	27/12/2025
+	First Draft
+	Group 13
+	Initial SDS
+	27/05/2026
+	Implementation-aligned addendum — architecture, component, flow, and interface amendments
+	Group 13
+	SDS v1.1 Final Update
+	
+
+Document Approval
+The following Software Design Specification has been accepted and approved by the following:
+
+
+Signature
+	Printed Name
+	Title
+	Date
+	
+
+	Mr Daniel Abebe
+	Advisor
+	
+
+	________________
+
+
+SDS Amendment Overview
+This section documents all amendments applied to this SDS over the original version (dated Dec 27, 2025). Amendments reflect the architecture and technical choices implemented in Awaqi. This addendum supersedes conflicting technical design details in the base SDS. The original class and use-case narrative is preserved unless explicitly overridden below.
+Document Control:
+* Base document: G13_SDS_Support_Bot_AI.md
+* Addendum version: 1.0
+* Date: 2026-05-27
+* Scope: Architecture, component, flow, and interface amendments
+
+
+Architecture Changes Table
+ID
+	Previous SDS Design
+	Implemented Design
+	Amendment
+	SDS-CHG-01
+	LangChain-centered orchestration
+	Custom orchestrators in apps/api + packages/ai-engine
+	Replace LangChain dependency with implementation-specific orchestration layer
+	SDS-CHG-02
+	multilingual-e5-large embeddings as primary vector source
+	Gemini embeddings (gemini-embedding-001) with 3072-dim vectors
+	Update embedding subsystem and vector dimension assumptions
+	SDS-CHG-03
+	Llama/Ollama fallback model path
+	Extractive deterministic fallback when generation path fails/unavailable
+	Replace fallback architecture statement
+	SDS-CHG-04
+	Redis/RAM-only guest session model
+	PostgreSQL chat sessions + HMAC-style session token authorization
+	Update session persistence design
+	SDS-CHG-05
+	JWT-centric auth model
+	Better Auth session validation for admin and customer channels
+	Update security/auth subsystem model
+	SDS-CHG-06
+	Pinecone/Elasticsearch references in diagrams
+	PostgreSQL + pgvector + PostgreSQL FTS/BM25-like search
+	Update storage/retrieval diagram and component labels
+	________________
+
+
+Definitions, Acronyms, and Abbreviations
+Acronym/Term
+	Definition
+	Context/Source
+	RAG
+	Retrieval Augmented Generation
+	Defined as the system's core method for answering questions based on facts.
+	LLM
+	Large Language Model
+	Described as the AI component used to generate responses.
+	MoR
+	Ministry of Revenue
+	The source of the regulatory documents ingested by the system.
+	OOD
+	Object-Oriented Design
+	The methodology used to model interactions between Users, Documents, and the Chat Engine.
+	RBAC
+	Role-Based Access Control
+	The architecture used to enforce boundary controls and privileges.
+	JWT
+	JSON Web Token
+	Token format — replaced in implementation by Better Auth sessions (see SDS-CHG-05).
+	CRUD
+	Create, Read, Update, Delete
+	The set of capabilities granted to Administrators regarding the Knowledge Base.
+	OCR
+	Optical Character Recognition
+	Listed as a component of the DocumentProcessor within the Ingestion Subsystem.
+	UUID
+	Universally Unique Identifier
+	The data type used for unique identification of documents and sessions.
+	RRF
+	Reciprocal Rank Fusion
+	Hybrid retrieval fusion method combining dense + sparse search results (k=60).
+	pgvector
+	PostgreSQL vector extension
+	Replaces Pinecone/Elasticsearch as the vector storage and similarity search backend.
+	APScheduler
+	Advanced Python Scheduler
+	Replaces cron-based job scheduling for the daily scraper.
+	________________
+
+
+1. Introduction
+1.1 Purpose
+The purpose of this System Design document is to translate the business requirements and business processes defined in the SRS into a technical design that will be used to develop the LLM-Based Support Bot for the Ethiopian Revenue Authority. This document describes the system architecture, subsystem decomposition, and detailed object models required to implement the advanced Retrieval Augmented Generation (RAG) system with hybrid search capabilities.
+This version (v1.1) incorporates implementation amendments from the Awaqi development phase. Where original and amended content conflict, the amendment takes precedence as documented in the SDS Amendment Overview section.
+1.2 General Overview
+The system is designed as an AI-powered information desk agent accessible via web interface and Telegram bot, capable of answering tax-related queries in Amharic and English. Unlike generic RAG implementations, this system employs a hybrid retrieval architecture combining BM25-style keyword matching with dense vector search (via PostgreSQL + pgvector), specifically optimized for Ethiopian tax terminology and Amharic language processing.
+The system operates by:
+1. Ingesting regulatory documents from the Ministry of Revenue (MoR) website.
+2. Converting documents into vector embeddings using Gemini embedding models (3072-dim). [Amended — see SDS-CHG-02.]
+3. Implementing dual retrieval paths (dense + sparse FTS) with Reciprocal Rank Fusion.
+4. Using a Large Language Model (Gemini) to generate regulation-grounded responses with mandatory citations.
+5. Applying confidence scoring to prevent hallucinations and trigger appropriate fallbacks.
+1.3 Development Methods & Contingencies
+Methodology: The system design utilizes Object-Oriented Design (OOD) principles to model the interaction between Users, Documents, and the Chat Engine. Development follows an Agile approach with iterative sprints, allowing for rapid adjustment of LLM prompts and retrieval parameters.
+Implemented Technology Stack: [Amended per SDS-CHG-01 through SDS-CHG-06]
+6. Backend: Python FastAPI + SQLAlchemy async + Alembic
+7. Frontend: Next.js (React with TypeScript) + next-intl
+8. AI/ML — Orchestration: Custom orchestration in apps/api + packages/ai-engine
+9. AI/ML — Generation: Gemini chat model (configurable)
+10. AI/ML — Embeddings: Gemini embedding model (gemini-embedding-001, 3072-dim)
+11. Database: PostgreSQL + pgvector extension
+12. Cache / Rate Limiting: Redis
+13. OCR / Extraction: PyMuPDF + Tesseract + HTML extraction
+14. Deployment: Docker Compose (api, web, db, redis, telegram-bot)
+Contingencies:
+15. LLM Latency: If Gemini API experiences high latency (>5s), the design activates the extractive deterministic fallback path. [Amended from Llama/Ollama — see SDS-CHG-03.]
+16. Scraper Blocking: If the MoR website changes its DOM structure, the Scraper module is isolated and can be updated independently without redeploying the core chat service.
+17. Low Confidence Responses: If retrieval confidence falls below the threshold, the system returns a standardized fallback message rather than potentially hallucinated content.
+________________
+
+
+2. System Architecture
+2.1 Subsystem Decomposition
+The system is decomposed into four major subsystems to ensure separation of concerns. [Amended from original per SDS-CHG-01 and SDS-CHG-06.]
+2.1.1 Client Subsystem (Frontend)
+* Responsible for rendering the chat interface, handling user input, and displaying responses.
+* Web app: Next.js app-router with multilingual UX, admin surface, and chat interface.
+* Telegram bot: Separate runtime forwarding to the same chat backend.
+* Components: ChatUI, HistoryManager, APIConnector, AdminDashboard.
+2.1.2 API Subsystem (Backend Controller)
+* Acts as the central controller, managing session state and routing requests.
+* FastAPI routers:
+   * chat — send / history / export / feedback
+   * admin — documents, ingestion, analytics, health, scraper controls
+   * telegram_link — link-request / confirm / status / unlink
+* Session token verification enforced for guest data access.
+* Redis-backed request rate limiting.
+2.1.3 Intelligence Subsystem (RAG Engine)
+* Language detection: heuristic am/en/mixed detector.
+* Retrieval:
+   * Dense search on pgvector embeddings
+   * Sparse keyword retrieval using PostgreSQL FTS candidate ranking
+   * Reciprocal Rank Fusion (RRF, k=60)
+* Generation:
+   * Primary: Gemini chat generation
+   * Fallback: Extractive deterministic synthesis
+* Confidence: Heuristic score computed and returned; threshold gating deferred (see SDS-DEF-04).
+2.1.4 Ingestion Subsystem (Data Pipeline)
+* Ingestion flow:
+   * Document extraction (HTML/PDF)
+   * OCR fallback with confidence tracking
+   * Token chunking
+   * Embedding generation (Gemini, 3072-dim)
+   * Atomic chunk replacement for re-index
+* Document lifecycle statuses: pending, processing, indexed, failed, requires_manual_review.
+* Scheduler: APScheduler-based configurable daily scraping.
+  
+
+Figure 1: High-Level System Architecture (Hybrid RAG)
+
+
+2.2 Hybrid Storage Architecture
+The system employs a unified PostgreSQL-based storage strategy. [Amended from dual Pinecone+PostgreSQL per SDS-CHG-06.]
+Storage Layer
+	Technology
+	Purpose
+	Vector Storage
+	PostgreSQL + pgvector
+	High-dimensional embeddings for dense similarity search (3072-dim)
+	Full-text / Sparse Search
+	PostgreSQL FTS (BM25-like)
+	Keyword retrieval for exact legal terms and Proclamation numbers
+	Relational / Session Data
+	PostgreSQL (ChatSession, Message, Document)
+	Chat sessions (guest + registered), messages, document metadata, feedback
+	Rate Limiting / Cache
+	Redis
+	IP-based rate limiting (TTL 600s); session support
+	2.3 Access Control
+The platform enforces strict boundary controls using a Role-Based Access Control (RBAC) architecture. [Auth model amended from JWT to Better Auth — see SDS-CHG-05.]
+Public / Guest User Access:
+* Guest sessions are now persisted in PostgreSQL (ChatSession + Message tables) and protected by per-session HMAC-style token authorization. [Amended from RAM-only per SDS-CHG-04.]
+* Permissions are strictly scoped to read-only interactions within the Chat Interface.
+* Rate limiting enforced via Redis token bucket (15 requests per 10 minutes per IP).
+Administrator Access:
+* Administrator role is secured through Better Auth session validation (roles: superadmin / editor). [Amended from JWT per SDS-CHG-05.]
+* Full CRUD capabilities over the Knowledge Base.
+* Operational scope includes: manual document ingestion, retry/review lifecycle management, health monitoring, analytics, and scraper controls.
+________________
+
+
+3. Object Model
+3.1 Class Diagram Overview
+The system is modeled across three layers using Object-Oriented Design (OOD) principles. The class hierarchy and interactions are illustrated in the three-part Class Diagram (Domain, Application, and Infrastructure layers) detailed in the original SDS figures. The data model amendments described in this document affect attribute types and persistence behaviour.
+
+
+  
+
+Class Diagram Part 1: Domain Layer (Data Model) — User Entities and Chat Entities
+
+
+  
+
+Class Diagram Part 2: Application Layer (Controllers & Services)
+
+
+3.1.1 Data Model Amendments
+The following amendments apply to the original class diagram attributes. All vector dimension values must be updated from 1024-dim (multilingual-e5-large) to 3072-dim (Gemini embedding-001).
+ID
+	Data Model Update
+	SDS-CHG-07
+	Vector dimension assumptions must be 3072 for current embedding provider compatibility. All embedding storage columns, cosine similarity operations, and index configurations must reflect 3072-dim vectors.
+	SDS-CHG-08
+	ChatSession and Message persistence includes guest traffic; access is protected by per-session token checks. The isEphemeral flag is retained in the model but no longer controls whether data is persisted — it controls whether the session token is issued with guest-tier access.
+	SDS-CHG-09
+	Feedback exists as a persisted model and API path, but full UX wiring remains pending (see SDS-DEF-09). The Feedback model is present in the schema but is not exposed in the chat UI for the current release.
+	SDS-CHG-10
+	Document model includes status/stage/error and metadata fields that drive ingestion and review workflows. Status enum: pending, processing, indexed, failed, requires_manual_review.
+	SDS-CHG-11
+	Auth entities are split into admin and customer domains under the Better Auth schema, replacing the single JWT-based Admin class model.
+	3.2 Class: Document
+Attribute
+	Type
+	Visibility
+	Invariant
+	Notes
+	docID
+	String (UUID)
+	Private
+	NOT NULL, unique
+	Primary key
+	title
+	String
+	Public
+	Length > 5
+	Official legal title
+	rawContent
+	Blob
+	Private
+	< 25MB
+	File size limit enforced at upload
+	fileType
+	Enum
+	Public
+	PDF | DOCX | TXT
+	Validated at ingestion
+	uploadDate
+	DateTime
+	Protected
+	Defaults to server timestamp
+	Set on creation
+	processStatus
+	Enum
+	Public
+	See SDS-CHG-10
+	pending | processing | indexed | failed | requires_manual_review
+	stage
+	String
+	Public
+	Optional
+	Current pipeline stage detail
+	errorDetail
+	String
+	Protected
+	Optional
+	Populated on failure or OCR low-confidence
+	
+
+Document Operations:
+Operation
+	Visibility
+	Return Type
+	Pre-Condition
+	Post-Condition
+	extractText
+	Private
+	String
+	Valid PDF/DOCX, < 25MB
+	Returns raw text including Amharic Unicode
+	cleanText
+	Private
+	String
+	rawText not null
+	Removes headers, footers, page numbers
+	chunkContent
+	Public
+	List<String>
+	cleanedText length > 100
+	Returns list of strings ≤ 1024 tokens each
+	updateStatus
+	Public
+	Void
+	Valid Enum value
+	processStatus updated; stage/errorDetail set as applicable
+	3.3 Class: Admin (Inherits from User)
+Represents an authenticated system administrator. Auth mechanism amended from JWT to Better Auth session validation. [See SDS-CHG-05.]
+Attribute
+	Type
+	Visibility
+	Invariant
+	adminID
+	String
+	Private
+	NOT NULL
+	username
+	String
+	Public
+	Unique, alphanumeric
+	passwordHash
+	String
+	Private
+	SHA-256 encrypted; never plain text
+	role
+	Enum
+	Protected
+	superadmin | editor (defaults to superadmin)
+	sessionToken
+	String
+	Private
+	Better Auth session token; 1-hour expiration [Amended from JWT]
+	
+
+Operation
+	Visibility
+	Return Type
+	Pre-Condition
+	Post-Condition
+	login
+	Public
+	Bool
+	Account must exist
+	Better Auth session token generated if valid
+	uploadDocument
+	Public
+	Void
+	Logged in; file valid
+	New Document created with status=pending; pipeline triggered
+	retryIngestion
+	Public
+	Void
+	Document in failed/requires_manual_review
+	Document status reset; ingestion pipeline re-run
+	viewSystemLogs
+	Public
+	JSON
+	Role = superadmin
+	Error/access logs returned for specified period
+	forceScrape
+	Public
+	Void
+	Scraper service idle
+	Scraper job triggered immediately
+	3.4 Class: ChatSession
+Represents a continuous conversation thread. Session persistence amended from RAM-only to PostgreSQL. [See SDS-CHG-04 and SDS-CHG-08.]
+Attribute
+	Type
+	Visibility
+	Invariant
+	sessionID
+	String (UUID)
+	Public
+	Unique UUID generated on session creation
+	sessionToken
+	String
+	Private
+	HMAC-signed token; issued at session creation; used for guest access authorization [New — SDS-CHG-04]
+	messageHistory
+	List<Message>
+	Private
+	Ordered by timestamp; persisted in PostgreSQL
+	isEphemeral
+	Boolean
+	Public
+	True = guest tier; token-controlled access rather than RAM-only [Amended — SDS-CHG-04]
+	startTime
+	DateTime
+	Private
+	System time at session creation
+	lastActivity
+	DateTime
+	Public
+	lastActivity ≤ CurrentTime
+	detectedLanguage
+	String
+	Public
+	'am' | 'en' | 'mixed'; set per message
+	3.5 Class: KnowledgeEngine (RAG Controller)
+Core logic class bridging user queries with retrieval and generation. Embedding model amended. [See SDS-CHG-02.]
+Attribute
+	Type
+	Visibility
+	Invariant
+	embeddingModel
+	String
+	Private
+	'gemini-embedding-001' (3072-dim) [Amended from multilingual-e5-large]
+	vectorDBClient
+	Object
+	Private
+	Active pgvector connection [Amended from Pinecone]
+	ftsClient
+	Object
+	Private
+	PostgreSQL FTS connection for sparse retrieval [New]
+	confidenceThreshold
+	Float
+	Public
+	Between 0.0 and 1.0; heuristic; hard gating deferred
+	rrfK
+	Integer
+	Private
+	60 (constant for RRF formula)
+	
+
+Operation
+	Visibility
+	Return Type
+	Pre-Condition
+	Post-Condition
+	vectorizeQuery
+	Private
+	Vector[]
+	queryText not empty
+	Returns 3072-dim float array via Gemini embedding API
+	denseRetrieve
+	Private
+	List<Chunk>
+	pgvector online
+	Top-K chunks by cosine similarity
+	sparseRetrieve
+	Private
+	List<Chunk>
+	PostgreSQL FTS online
+	Top-K candidates by BM25-style ranking
+	fuseRRF
+	Private
+	List<Chunk>
+	Both result lists populated
+	Returns unified ranked list via RRF (k=60)
+	generateAnswer
+	Public
+	String
+	LLM API reachable
+	Returns natural language response with citations; extractive fallback on failure
+	validateConfidence
+	Private
+	Boolean
+	score computed
+	Returns True if score ≥ confidenceThreshold
+	3.6 Class: WebScraper
+Attribute
+	Type
+	Visibility
+	Invariant
+	targetURL
+	String
+	Private
+	'https://mor.gov.et'
+	scheduler
+	APScheduler
+	Private
+	Configurable daily trigger [Amended from cron]
+	downloadPath
+	String
+	Private
+	Path must be writeable by the system
+	________________
+
+
+4. Sequence Flow Corrections
+The following revised sequence flows supersede the original SDS sequence diagrams where conflicts exist. Original flow diagrams (Figures 1–3) remain valid for non-amended steps.
+
+
+  
+
+Figure 1: Hybrid RAG Conversation Flow (Success Scenario) — Revised
+
+
+4.1 Chat Request Flow (Revised)
+This flow replaces the original Standard RAG Conversation Flow (Figure 1) for the implemented system.
+Step
+	Description
+	1
+	Client submits query + session ID (+ optional taxonomy profile — Individual / SME / Enterprise).
+	2
+	API validates or creates session; stores user message in PostgreSQL ChatSession/Message tables. Session token verified for guest access.
+	3
+	Safety / refusal checks run (profanity, off-topic detection).
+	4
+	Language detection runs (heuristic am/en/mixed detector).
+	5
+	Hybrid retrieval executes: dense pgvector cosine search + PostgreSQL FTS sparse search; results fused via RRF (k=60).
+	6
+	Generation pipeline executes: Gemini primary model with retrieved context + citation instruction. Extractive fallback activates if Gemini is unavailable.
+	7
+	Assistant message + citations + heuristic confidence score persisted to database.
+	8
+	Response returned to client: message content + inline citations + session token + detected language.
+	
+
+4.2 Ingestion Request Flow (Revised)
+This flow supersedes the original Admin Upload Document sequence (Figure based on UC-03) for the implemented system.
+
+
+  
+
+Figure 3: Vertical Error & Fallback Strategy
+
+
+Step
+	Description
+	1
+	Admin upload passes size/type validation checks and deduplication hash checks.
+	2
+	Document status set to processing; stage transitions tracked throughout pipeline.
+	3
+	Extraction pipeline: PDF/HTML text extraction → OCR fallback (PyMuPDF + Tesseract) if no text layer.
+	4
+	If OCR confidence is low, route to requires_manual_review state; notify admin in dashboard. Skip indexing to prevent garbage data.
+	5
+	Token chunking (sliding window, ~750 words / 1024 tokens, 100-word overlap for context continuity).
+	6
+	Gemini embedding generation (3072-dim) for each chunk.
+	7
+	Atomic chunk replacement for re-index: existing chunks for document removed; new chunks inserted.
+	8
+	Document status updated to indexed; document becomes immediately searchable.
+	________________
+
+
+5. Algorithm Design
+
+
+  
+
+Figure: End-to-End Algorithm Pipeline
+
+
+  
+
+State Chart Diagram: Hybrid RAG System Logic Tree
+
+
+5.1 Hybrid Retrieval Augmented Generation (RAG) Flow
+The system uses an advanced hybrid RAG pattern that combines keyword matching with semantic search.
+18. Input: Query from user in Amharic, English, or mixed.
+19. NLU Processing: Heuristic language detection → intent classification → entity extraction.
+20. Dual Retrieval Path:
+   * Dense Search: Cosine similarity on pgvector with Gemini embeddings (3072-dim). [Amended from multilingual-e5-large — SDS-CHG-02]
+   * Sparse Search: PostgreSQL FTS keyword ranking for exact legal terms. [Amended from Elasticsearch — SDS-CHG-06]
+   * Fusion: Reciprocal Rank Fusion (k=60) combines both result sets.
+21. Confidence Check: If max retrieval score < threshold, return fallback message instead of proceeding.
+22. Augmentation: User question + top-5 retrieved chunks → structured prompt with citation requirements.
+23. Generation: Gemini primary model generates response with citations. Extractive fallback activates on failure. [Amended from Llama/Ollama — SDS-CHG-03]
+24. Post-Processing: Citation validation; anonymized query-response pair logged; session context updated.
+5.2 Reciprocal Rank Fusion (RRF)
+Combines dense and sparse retrieval results into a unified ranking.
+Formula: RRF_score(d) = Σ 1 / (k + rank_i(d))  where k = 60
+Benefit: Documents appearing in top ranks of both systems receive the highest combined scores, leveraging strengths of both dense and sparse approaches.
+5.3 Confidence Estimation
+Multi-signal heuristic scoring to prevent hallucinations.
+Signal
+	Weight
+	Measurement
+	Retrieval Score
+	0.4
+	Max cosine similarity from dense pgvector search
+	BM25 / FTS Score
+	0.2
+	Normalized PostgreSQL FTS score
+	Citation Overlap
+	0.3
+	Ratio of generated claims with source support
+	LLM Uncertainty
+	0.1
+	Token probability variance (where available)
+	
+
+Decision Logic:
+* Combined Score ≥ 0.7 → Return answer with citations.
+* Combined Score 0.5–0.7 → Return answer with disclaimer.
+* Combined Score < 0.5 → Return fallback: 'Please consult an ERA officer directly.'
+Hard threshold gating is a planned enhancement. Current implementation returns heuristic score as informational signal — see SDS-DEF-04.
+5.4 Guest Rate Limiting (Token Bucket via Redis)
+* Identifier: Client IP Address.
+* Storage: Redis Cache (In-Memory, TTL 600 seconds).
+* Logic: GET rate_limit:{IP} → if null: SET = 1, EXPIRE 600 → if < 15: INCR, allow → if ≥ 15: HTTP 429.
+* Privacy: Redis key auto-expires after 10 minutes; no permanent IP log retained.
+5.5 Text Chunking (Sliding Window)
+* Chunk size: ~750 words (1024 tokens).
+* Overlap: 100-word overlap between adjacent chunks for context continuity.
+* Metadata preservation: Each chunk retains source document ID, page number, and section header for citation.
+________________
+
+
+6. Security Design Updates
+ID
+	Security Amendment
+	SDS-CHG-12
+	Session integrity for guest access is enforced by per-session token signing/validation (HMAC-style) rather than anonymous-only storage. Tokens are issued at session creation and required for history/export/feedback access.
+	SDS-CHG-13
+	Admin endpoint access is enforced through role-gated Better Auth session validation (superadmin / editor). JWT-based validation is replaced in the implemented system.
+	SDS-CHG-14
+	Rate limiting remains Redis-based at API layer: 15 requests per 10-minute window per IP. Implementation is unchanged from original SDS intent.
+	SDS-DEF-01
+	ClamAV file scanning remains a planned security enhancement, not yet active in the current release.
+	SDS-DEF-02
+	Immutable audit-log subsystem remains planned, not yet implemented. Admin action logging is partial.
+	________________
+
+
+7. Interface Amendments
+Interface
+	Amendment
+	Chat API
+	Supports session-token-protected history / export / feedback access. Endpoints: POST /chat/send, GET /chat/history/{session_id}, GET /chat/export/{session_id}, POST /chat/feedback.
+	Admin API
+	Provides document ingestion, retry, review lifecycle management, and health/analytics summaries. Endpoints: POST /admin/documents, GET /admin/documents, POST /admin/documents/{id}/retry, POST /admin/documents/{id}/review, GET /admin/health, GET /admin/analytics.
+	Telegram API Integration
+	Bot command set differs from original SDS command list. Core conversation integration (message forwarding to chat backend) is implemented. Advanced command set is partially deferred.
+	Embedding Interface
+	Internal embedding calls are provider-backed via Gemini API; no dedicated embedding microservice is required in the current topology. [Amended from separate embedding service assumption.]
+	Storage Interface
+	pgvector extension on PostgreSQL replaces Pinecone/Elasticsearch as the retrieval backend. All vector CRUD operations are issued via SQLAlchemy async ORM.
+	________________
+
+
+8. Deferred Design Items
+The following design items remain part of the target architecture but are formally deferred from the current release. They are documented here for traceability and sprint planning.
+ID
+	Deferred Item
+	Impact on Current Release
+	SDS-DEF-01
+	ClamAV upload scanning integration
+	File uploads are accepted without malware scanning; security risk acknowledged for production
+	SDS-DEF-02
+	Immutable audit-log subsystem
+	Admin actions are partially logged; full compliance audit trail not available
+	SDS-DEF-03
+	Multi-turn prompt context injection (last 5 message pairs)
+	Follow-up quality remains below target for chained questions
+	SDS-DEF-04
+	Strict confidence threshold block/fallback gate
+	Hallucination prevention controls are weaker than target design
+	SDS-DEF-05
+	Full analytics/KPI model (resolution/escalation/sentiment)
+	Admin observability incomplete versus SDS intent
+	SDS-DEF-06
+	Automated monthly evaluation pipeline (EM/F1/BERTScore)
+	No ongoing objective quality scorecards generated
+	SDS-DEF-07
+	Full citation verification side panel UX
+	Explainability UI is partial; inline citations only
+	SDS-DEF-08
+	Feedback UX with categorization wired to chat UI
+	Feedback model and API exist but not exposed in the UI
+	________________
+
+
+9. Evaluation Framework Design
+The evaluation framework defines objective metrics for measuring system quality. Full automated evaluation pipeline is deferred (see SDS-DEF-06); metrics remain the target acceptance criteria for post-deployment review.
+
+
+  
+
+Figure: Evaluation Metrics Pipeline
+
+
+Metric
+	Description
+	Target
+	Status
+	Top-K Retrieval Accuracy
+	% of queries where correct doc is in top-K results
+	≥ 85% (K=5)
+	Deferred
+	Exact Match (EM)
+	% of answers exactly matching ground truth
+	≥ 70% (FAQs)
+	Deferred
+	F1 Score
+	Harmonic mean of precision and recall
+	≥ 0.8
+	Deferred
+	ROUGE-L
+	Longest common subsequence overlap
+	≥ 0.5
+	Deferred
+	BERTScore
+	Semantic similarity of generated vs reference answer
+	≥ 0.85
+	Deferred
+	Citation Accuracy
+	% of citations correctly pointing to source
+	≥ 95%
+	Partial
+	Hallucination Rate
+	% of responses with unsupported claims
+	< 5%
+	Manual only
+	Multilingual Parity
+	Accuracy difference (Amharic vs English)
+	≤ 5%
+	Deferred
+	________________
+
+
+10. Updated Technology Baseline
+This section supersedes Section 1.3 (Technologies) and the Database Stack Selection in the original SDS. [Amended per SDS-CHG-01 through SDS-CHG-06.]
+Component
+	Technology
+	Notes
+	Backend
+	FastAPI + SQLAlchemy async + Alembic
+	Replaces Nest.js reference in original SDS
+	Frontend
+	Next.js + TypeScript + next-intl
+	Multilingual UX; admin and chat surfaces
+	Vector Storage
+	PostgreSQL + pgvector
+	Replaces Pinecone (SDS-CHG-06)
+	Sparse Retrieval
+	PostgreSQL FTS (BM25-like)
+	Replaces Elasticsearch (SDS-CHG-06)
+	Cache / Rate Limit
+	Redis
+	Unchanged from original design
+	LLM Generation
+	Gemini chat model (configurable)
+	Primary model; extractive fallback active
+	Embeddings
+	Gemini embedding-001 (3072-dim)
+	Replaces multilingual-e5-large (SDS-CHG-02)
+	OCR / Extraction
+	PyMuPDF + Tesseract + HTML extractor
+	Unchanged; confidence tracking added
+	Auth
+	Better Auth
+	Replaces JWT for both admin and guest channels (SDS-CHG-05)
+	Orchestration
+	Custom (apps/api + packages/ai-engine)
+	Replaces LangChain (SDS-CHG-01)
+	Scheduler
+	APScheduler
+	Replaces cron-based scheduling
+	Deployment
+	Docker Compose (api, web, db, redis, telegram-bot)
+	Unchanged
+	
+
+Migration Guidance for Original SDS Sections
+The following cross-references map original SDS sections to their updated counterparts in this document:
+Original SDS Section
+	Updated By
+	Section 1.3 — Technologies
+	Section 10 of this document + SDS-CHG-01 through SDS-CHG-06
+	Section 2.1 — Subsystem Decomposition
+	Section 2.1 of this document (Nest/Pinecone/Elasticsearch replaced)
+	Section 4.4/4.6 — KnowledgeEngine & Algorithms
+	Section 3.5 (class) + Section 5 (algorithms); embedding/fallback/confidence updated
+	Security Sections (JWT / RBAC)
+	Section 6 of this document; SDS-CHG-12, SDS-CHG-13
+	Sequence Diagrams (Figures 1–3)
+	Section 4 of this document for amended flows
+	________________
+
+
+11. References
+25. IEEE Std 1016-2009: IEEE Recommended Practice for Software Design Descriptions.
+26. Lewis, P., et al. (2020). Retrieval-Augmented Generation for Knowledge-Intensive NLP Tasks. arXiv:2005.11401.
+27. Robertson, S., & Zaragoza, H. (2009). The Probabilistic Relevance Framework: BM25 and Beyond. Foundations and Trends in Information Retrieval.
+28. Conneau, A., et al. (2020). Unsupervised Cross-lingual Representation Learning at Scale (XLM-RoBERTa). arXiv:1911.02116.
+29. FastAPI Documentation. https://fastapi.tiangolo.com/
+30. pgvector Extension Documentation. https://github.com/pgvector/pgvector
+31. Google AI: Gemini API Documentation. https://ai.google.dev/gemini-api
+32. PostgreSQL Full-Text Search Documentation. https://www.postgresql.org/docs/current/textsearch.html
+33. Next.js Documentation. https://nextjs.org/docs
+34. Docker Engine Documentation. https://docs.docker.com/
+35. Telegram Bot API Documentation. https://core.telegram.org/bots/api
+School Of Information Technology and Engineering

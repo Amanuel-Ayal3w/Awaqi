@@ -51,6 +51,13 @@ class ProcessingStage(str, PyEnum):
     INDEXING = "indexing"
 
 
+class EnforcementStatus(str, PyEnum):
+    """Legal lifecycle tag set by admin at upload time."""
+
+    IN_EFFECT = "in_effect"
+    DRAFT = "draft"
+
+
 class Document(Base):
     """A regulatory document sourced from mor.gov.et or manually uploaded."""
 
@@ -100,6 +107,16 @@ class Document(Base):
     external_id: Mapped[str | None] = mapped_column(String(128), nullable=True, index=True)
     source_system: Mapped[str] = mapped_column(String(32), nullable=False, default="upload")
     storage_path: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    enforcement_status: Mapped[str] = mapped_column(
+        Enum(
+            EnforcementStatus,
+            name="enforcement_status",
+            values_callable=lambda e: [m.value for m in e],
+        ),
+        nullable=False,
+        default=EnforcementStatus.IN_EFFECT,
+        server_default=EnforcementStatus.IN_EFFECT.value,
+    )
 
     # Relationship
     uploader: Mapped["BaUser | None"] = relationship(
@@ -119,9 +136,8 @@ class Document(Base):
 
 
 # Must match ``GEMINI_EMBEDDING_DIMENSION`` / ``ai_engine.gemini_embedder.EMBEDDING_DIM``.
-# 1536-d: half of gemini-embedding-001's native output, still excellent quality,
-# and stays within pgvector's 2000-d index limit for all pgvector versions.
-EMBEDDING_DIM = 1536
+# Use native gemini-embedding-001 vectors (3072-d).
+EMBEDDING_DIM = 3072
 
 
 class DocumentChunk(Base):

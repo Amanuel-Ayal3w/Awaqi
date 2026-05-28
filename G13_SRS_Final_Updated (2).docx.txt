@@ -1,0 +1,589 @@
+﻿SupportBot AI  Next-Gen Revenue Customer Service  |  2025
+
+
+
+
+College of Technology and Built Environment
+School of Information Technology and Engineering
+Department of IT/SE Eng.
+
+
+LLM-Based Support Bot for Ethiopian Revenue Authority
+to enhance information desk service for tax payers and business owners
+
+
+Software Requirements Specification
+(Final Updated Version — Incorporating Implementation Amendments)
+Team Members
+1. Abdurahman Mohammed …ATE/8901/13
+2. Amanuel Ayalew…………….ATE/3871/13
+3. Basliel selamu ...................ATE/6761/13
+4. Bethel Wondowssen............ATE/8712/13
+5. Diborah Dereje...................ATE/1712/13
+Advisor: Mr. Daniel
+
+
+
+
+Original Date: Dec 22, 2025  |  Addendum Date: May 27, 2026
+________________
+
+
+Revision History
+Date
+	Description
+	Author
+	Comments
+	25/12/2025
+	First Draft
+	Amanuel
+	Initial SRS
+	27/05/2026
+	Implementation addendum — technology stack, session model, auth, deferred items, and release acceptance baseline
+	Group 13
+	SRS v1.1 Final Update
+	
+
+Document Approval
+The following Software Requirements Specification has been accepted and approved by the following:
+
+
+Signature
+	Printed Name
+	Title
+	Date
+	
+
+	Mr Daniel Abebe
+	Advisor
+	
+
+	________________
+
+
+SRS Amendment Overview
+This section documents all amendments applied to this document over the original SRS (dated Dec 22, 2025). Amendments reflect the implemented architecture and decisions made during the Awaqi development phase. This addendum supersedes conflicting technical details in the base SRS; the original requirements narrative is preserved unless explicitly overridden below.
+Requirement Changes Table
+ID
+	Original Requirement
+	Updated Requirement
+	SRS-CHG-01
+	Technology Stack — LangChain orchestration as primary AI pipeline
+	Custom FastAPI orchestration in apps/api + packages/ai-engine; LangChain dependency removed.
+	SRS-CHG-02
+	multilingual-e5-large listed as the primary embedding model
+	Gemini embeddings (gemini-embedding-001) with 3072-dim vectors are the implemented embedding provider.
+	SRS-CHG-03
+	Llama/Ollama listed as fallback model path (Section 3.9 / Appendix)
+	Extractive deterministic synthesis is the fallback when generation path fails; Llama/Ollama fallback not active.
+	SRS-CHG-04
+	Guest sessions stored strictly in server RAM only (zero-footprint)
+	Guest sessions are persisted in PostgreSQL ChatSession + Message tables; access is protected by per-session HMAC-style token. Zero-footprint guarantee is relaxed to session-token-controlled access.
+	SRS-CHG-05
+	JWT-centric authentication model for admin access
+	Better Auth session validation is used for both admin and customer channels; JWT is replaced.
+	SRS-CHG-06
+	Confidence score triggers hard fallback gate below threshold 0.7
+	Confidence score is currently heuristic and informational in web responses; mandatory hard fallback threshold logic remains planned (SRS-DEF-03).
+	SRS-CHG-07
+	Citation source side-panel UX for full source verification
+	Citation rendering is currently inline (message-level expandable items); full source side-panel UX remains planned (SRS-DEF-07).
+	SRS-CHG-08
+	Quick-action suggestion chips displayed in chat UI
+	Quick-action suggestion chips are deferred and not mandatory for current release acceptance.
+	SRS-CHG-09
+	Intent classification metrics tracked and reported
+	Intent classification metrics are deferred until a dedicated intent pipeline is implemented.
+	SRS-CHG-10
+	Technology-coupled NFRs specified fixed vendor/tool names
+	Technology-coupled NFRs now specify capability outcomes (secure auth, robust retrieval, safe fallback), not fixed vendor/tool names.
+	SRS-CHG-11
+	Performance and quality targets treated as current acceptance criteria
+	Performance and quality targets remain valid but are marked as operational acceptance criteria pending instrumentation and benchmark suites.
+	SRS-CHG-12
+	Privacy requirement prohibits any persistent session content
+	Privacy requirement wording updated to allow persisted session content where protected by access controls; explicit PII scrubbing and detection remain required backlog items.
+	________________
+
+
+Definitions, Acronyms, and Abbreviations
+Term / Acronym
+	Definition
+	API
+	Application Programming Interface. A set of protocols and tools that allows different software applications to communicate with each other.
+	Chunking
+	The process of breaking down large text documents into smaller, semantically meaningful segments (e.g., 512 tokens) to be processed by the embedding model.
+	Confidence Score
+	A numerical value (usually between 0 and 1) indicating the probability that the AI-generated response is accurate based on the retrieved context.
+	Cron Job
+	A time-based job scheduler in Unix-like operating systems, used here to schedule the daily web scraper.
+	Embedding
+	A numerical representation (vector) of text where words with similar meanings have similar mathematical representations.
+	Hallucination
+	A phenomenon where a Large Language Model generates plausible-sounding but incorrect or nonsensical information not grounded in the provided source text.
+	LLM
+	Large Language Model. A type of AI algorithm (e.g., Gemini, Llama 3) that uses deep learning techniques and massively large data sets to understand, summarize, generate, and predict new content.
+	MoR
+	Ministry of Revenue. The Ethiopian government agency responsible for collecting taxes and customs duties.
+	NLP
+	Natural Language Processing. A branch of AI that gives computers the ability to understand text and spoken words in much the same way human beings can.
+	OCR
+	Optical Character Recognition. The electronic conversion of images of typed, handwritten, or printed text into machine-encoded text.
+	PII
+	Personally Identifiable Information. Information that can be used on its own or with other information to identify, contact, or locate a single person (e.g., TIN, Name, Phone Number).
+	RAG
+	Retrieval-Augmented Generation. A technique that optimizes the output of an LLM so it references an authoritative knowledge base outside its training data before generating a response.
+	RRF
+	Reciprocal Rank Fusion. A retrieval fusion method that combines sparse (BM25) and dense (vector) search results into a unified ranking.
+	SIGTAS
+	Standard Integrated Government Tax Administration System. The current internal legacy system used by the MoR for tax processing.
+	SRS
+	Software Requirements Specification. A document that describes what the software will do and how it is expected to perform.
+	TIN
+	Taxpayer Identification Number. A unique registration number used by the tax authority to identify taxpayers.
+	VAT
+	Value Added Tax. A consumption tax placed on a product whenever value is added at each stage of the supply chain.
+	Vector Database
+	A specialized database optimized for storing and querying high-dimensional vector embeddings for fast similarity search (implemented via PostgreSQL + pgvector).
+	________________
+
+
+Declaration
+We declare that this written submission represents our ideas in our own words and where others' ideas or words have been included, we have adequately cited and referenced the original sources. We also declare that we have adhered to all principles of academic honesty and integrity and have not misrepresented or fabricated or falsified any idea/data/fact/source in our submission. We understand that any violation of the above will be cause for disciplinary action by the Institute and can also evoke penal action from the sources which have thus not been properly cited or from whom proper permission has not been taken when needed.
+
+
+Group No:  Group 13
+________________
+
+
+1. Introduction
+The introduction to the Software Requirement Specification (SRS) document provides an overview of the complete SRS document. This document contains all of the information needed by a software engineer to adequately design and implement the software product described by the requirements listed herein.
+1.1 Purpose
+The purpose of this Software Requirements Specification (SRS) is to define the functional and non-functional requirements for the "LLM-Based Support Bot for the Ethiopian Revenue Authority." This document is intended for the software engineering team (developers, testers, and architects) to guide the design, implementation, and verification of the system. It also serves as a validation document for stakeholders to ensure the proposed solution meets the identified business needs.
+This version (v1.1) incorporates implementation amendments from the Awaqi development phase. All changes are tracked in the Amendment Overview section. Where original and amended content conflict, the amendment takes precedence.
+1.2 Problem Statement
+The Ministry of Revenue (MoR) of Ethiopia serves over 4.5 million registered taxpayers, with thousands of new registrations monthly. Each taxpayer faces unique circumstances requiring accurate, timely guidance on complex tax regulations. The Ethiopian tax code, like tax systems worldwide, is inherently complex and constantly evolving through new proclamations, directives, and amendments.
+The Cost of Misinformation: Incorrect tax information does not merely result in minor inconveniences. Taxpayers face:
+* Substantial financial penalties (ranging from 10% to 100% of tax due)
+* Prolonged compliance processes requiring multiple office visits
+* Business operation disruptions due to frozen accounts or legal proceedings
+Current Information Channels and Their Limitations:
+1. Physical Information Desk Officers:
+   * Time & Cost Intensive: Taxpayers must travel to MoR branch offices, often waiting hours in queues.
+   * Overwhelmed Staff: With limited officers handling high volumes, responses are restricted to generic information rather than personalized guidance.
+   * Information Gathering Bottleneck: Over 50% of taxpayer time at revenue offices is spent gathering preliminary information before actual service delivery.
+   * Trial-and-Error Compliance: Many taxpayers report needing 3–5 visits to correctly complete procedures like VAT registration or TIN correction.
+2. E-Services Portal (eservices.gov.et):
+   * Outdated Content: The platform is not actively maintained, containing regulations that may be superseded.
+   * Limited Scope: Provides only basic, static information without context-aware or personalized responses.
+   * Trust Deficit: Users are uncertain whether displayed information reflects current law, reducing adoption.
+Our Solution:
+This project delivers an AI-Powered Information Desk Agent — a localized, Ethiopia-specific solution that provides:
+* Accurate answers grounded in official MoR proclamations and directives
+* Up-to-date information through automated daily knowledge base synchronization
+* Personalized responses tailored to the taxpayer's category (Individual, SME, Large Enterprise)
+* Instant 24/7 availability eliminating queues and office-hour constraints
+* Context-aware analysis capable of reviewing user-uploaded documents to provide specific guidance
+1.3 Scope
+Product Description: The software is an intelligent, AI-powered chatbot system utilizing Retrieval Augmented Generation (RAG) technology. It is designed to transform tax information accessibility for Ethiopian taxpayers and business owners.
+Application Goals and Benefits:
+* Instant Access: Reduce information retrieval time from weeks to seconds.
+* Accessibility: Provide 24/7 responses in Amharic and English via a web interface.
+* Accuracy: Deliver regulation-grounded answers by querying a constantly updated knowledge base derived from the Ministry of Revenue (MoR) website.
+* Cost Efficiency: Reduce the burden on physical information desks and call centers.
+The system will:
+3. Automate the ingestion of tax regulations from mor.gov.et.
+4. Process natural language queries in Amharic and English.
+5. Provide citations for all answers generated.
+The system will not:
+6. Perform direct tax filing or process payments.
+7. Store personal identifiable information (PII) of taxpayers beyond what is necessary for session access control.
+8. Provide binding legal advice beyond citing existing regulations.
+1.4 Overview
+The remainder of this document describes the system in detail. Section 2 provides a high-level overview of the product context and user demographics. Section 3 details the specific functional and interface requirements. Section 4 outlines the change management process. The Amendment Overview section documents all implementation-aligned changes. Sections on Deferred Requirements and Release Acceptance Baseline define the current deployment scope.
+1.5 Project Objectives
+The goal of this project is to bridge the gap between complex tax legislation and taxpayer understanding through AI. The specific objectives include:
+9. Localized Legal Accuracy: Implement a Retrieval-Augmented Generation (RAG) architecture to ensure responses are grounded in official Ethiopian tax proclamations (e.g., VAT, Income Tax), providing sub-second responses with specific clause citations.
+10. Linguistic Inclusivity: Provide a robust multilingual interface in Amharic and English, specifically optimized to handle the morphological complexities of the Ethiopic script in legal contexts.
+11. Operational Efficiency: Reduce the burden on the Ethiopian Revenue Authority (MoR) physical information desks by automating answers to high-volume, routine tax queries.
+12. Information Recency: Establish an autonomous data pipeline that monitors and scrapes mor.gov.et for new directives, ensuring the bot's knowledge base reflects the most current laws.
+________________
+
+
+2. General Description
+This section describes the general factors that affect the product and its requirements. It is made clear that this section does not state specific requirements; it only makes those requirements easier to understand.
+2.1 Literature Review
+2.1.1 Ethiopian Digital Tax & Legal Platforms
+13. Ministry of Revenue (MoR) Portal: The official repository for Ethiopian tax law (mor.gov.et). Literature identifies a "usability gap" where taxpayers struggle to find specific information within large, static PDF files. This project builds upon this infrastructure by making these documents semantically searchable.
+14. Ethiopian Tax Law Assistant (2025): A benchmark RAG-based project that demonstrated the feasibility of using LangChain and ChromaDB for local tax queries. Research proved that providing clause-level citations significantly increases user trust in AI-generated legal advice.
+15. Biritu Finance Bot: A local platform serving as a case study for financial AI in Ethiopia. It demonstrated that Ethiopian users respond positively to conversational agents that simplify complex financial regulations into accessible Amharic and English dialogue.
+2.1.2 Amharic Natural Language Processing (NLP) Research
+16. Linguistic Challenges: Research from Addis Ababa University underscores the difficulty of processing the Ethiopic script due to its rich morphology. This SRS adopts Unicode-aware tokenization to ensure technical tax terms are correctly identified.
+17. RAG vs. Fine-Tuning: Current literature on "Low-Resource Language Processing" suggests that RAG is superior to fine-tuning for legal applications in Ethiopia, as it allows the model to access fresh data without the high cost of re-training for every new proclamation.
+2.2 Product Perspective
+This product is a new, standalone system designed to augment the existing service delivery channels of the Ethiopian Revenue Authority (in-person desks and call centers).
+18. System Interfaces: The system interacts with the existing Ministry of Revenue website (mor.gov.et) as a data source via an automated scraper.
+19. User Interfaces: It provides a public-facing web interface accessible via standard web browsers on mobile and desktop devices.
+20. Operations: It operates independently of the MoR's internal transactional databases (SIGTAS), relying solely on public regulatory data.
+
+
+  
+
+Figure 1: High-Level System Context Diagram
+2.3 Product Functions
+21. Automated Content Acquisition: Daily scraping of the MoR website for new regulations, proclamations, and announcements.
+22. Vector Database Management: Converting text documents into vector embeddings for semantic search.
+23. Multilingual Query Processing: Accepting and understanding queries in Amharic and English using multilingual models.
+24. Retrieval-Augmented Generation (RAG): Retrieving relevant document chunks and generating context-aware answers using a Large Language Model (LLM).
+25. Citation and Verification: Providing references to specific legal articles or documents used to generate the answer.
+26. Conversation Management: Handling multi-turn conversations and maintaining session context.
+2.4 User Characteristics
+27. Small Business Owners: Low to moderate digital literacy; primarily seek compliance regarding VAT, withholding tax, and renewal deadlines. May prefer Amharic.
+28. Corporate Tax Officers: High digital literacy; seek specific regulatory details and complex procedural information. Comfortable with English or technical Amharic.
+29. Individual Taxpayers: General public needing basic TIN registration or income tax information.
+30. System Administrators: Technical staff responsible for monitoring the scraper health and system uptime.
+31. Guest User (Public Taxpayer): An unregistered user seeking immediate answers regarding tax laws and directives. No login credentials required. Rate-limited to 15 queries per 10 minutes per IP address to prevent system abuse.
+2.5 General Constraints
+32. Regulatory Policies: The system must strictly adhere to published Ethiopian tax laws. It must not generate advice that contradicts Proclamations (e.g., 286/2002, 285/2002).
+33. Hardware Limitations: The system relies on cloud infrastructure or local servers capable of running vector search and LLM inference.
+34. Connectivity: The system requires an active internet connection to function; offline mode is limited to viewing cached/previous chats.
+35. Language Support: Initially limited to Amharic and English; other Ethiopian languages are currently out of scope.
+36. LLM Probabilistic Nature: Large Language Models are inherently probabilistic. The system must implement deterministic evaluation metrics and confidence scoring to mitigate this constraint.
+37. Amharic NLP Resource Scarcity: Pre-trained models for Amharic are limited. The system must use existing multilingual models (e.g., XLM-RoBERTa, mBERT).
+2.6 Assumptions and Dependencies
+38. Source Availability: It is assumed that mor.gov.et will remain accessible for scraping and that documents will continue to be published in PDF or HTML formats.
+39. API Availability: The project depends on the availability of LLM APIs (Gemini) and the PostgreSQL + pgvector stack as the primary storage and retrieval backend.
+40. User Connectivity: It is assumed users have access to smart devices and basic internet connectivity.
+________________
+
+
+3. Specific Requirements
+This section contains all software requirements at a level of detail sufficient to enable designers to design a system to satisfy those requirements, and testers to test that the system satisfies those requirements.
+3.1 External Interface Requirements
+3.1.1 User Interfaces
+The system provides a web-based chat interface accessible by all user types. Key UI elements include:
+* Landing page with dual-language branding (English / Amharic), guest and login access paths.
+* Chat interface with left-sidebar for session history, main message window, and a citation/source expandable panel per response.
+* Confidence level indicator displayed per assistant message.
+* Admin Knowledge Base Manager with document upload, ingestion status tracking, and bulk management.
+* Admin Dashboard with real-time metrics: query volume, response time, active sessions, resolution rate, and system health.
+* Settings panel for language preference (English / Amharic) and appearance (light/dark mode, text size).
+3.1.2 Hardware Interfaces
+* Server Side: The application shall run on virtualized cloud servers or physical servers capable of supporting Dockerized containers for the backend and database.
+* Client Side: The system shall have no specific hardware requirements beyond a device capable of running a modern web browser (Chrome, Firefox, Safari, Edge).
+3.1.3 Software Interfaces
+* SI-01 Ministry Website: The system shall interface with https://mor.gov.et via a Python-based web scraper (BeautifulSoup/Scrapy) to fetch public documents.
+* SI-02 Vector & Relational Database: The system shall use PostgreSQL with the pgvector extension as the unified storage backend for both vector embeddings and relational data. (Amended from Pinecone/Weaviate — see SRS-CHG-04.)
+* SI-03 LLM Service: The system shall interact with the Gemini API via REST for generation; an extractive fallback path activates on failure.
+* SI-04 Backend Framework: The backend shall be built using Python FastAPI.
+* SI-05 Frontend Library: The user interface shall be built using Next.js with TypeScript.
+3.1.4 Communications Interfaces
+* CI-01: The system shall use HTTPS for all communication between the client and the server.
+* CI-02: The system shall use JSON formatting for API payloads (requests and responses).
+3.2 Functional Requirements
+3.2.1 Knowledge Base Management
+* FR-01: The system shall execute a scheduled job (APScheduler-based) daily at 00:00 EAT to check for new content on the source website.
+* FR-02: The system shall extract text from PDF and HTML documents, correctly handling Amharic Unicode characters, with OCR fallback for scanned images.
+* FR-03: The system shall segment extracted text into token-based chunks and generate vector embeddings (Gemini embedding model, 3072-dim).
+3.2.2 Query Processing
+* FR-04: The system shall automatically detect the language of the user's input query using a heuristic Amharic/English/mixed detector.
+* FR-05: The system shall classify the intent of the query (informational, procedural, definitional, clarification). [Note: full intent classification pipeline is deferred — see SRS-DEF-01.]
+* FR-06: The system shall perform hybrid retrieval: dense search on pgvector embeddings + sparse BM25-style keyword retrieval using PostgreSQL FTS, fused via Reciprocal Rank Fusion (RRF, k=60).
+3.2.3 Response Generation
+* FR-07: The system shall generate natural language responses using the retrieved chunks as context (RAG pattern), with Gemini as the primary generation model.
+* FR-08: The system shall include a heuristic Confidence Score with responses. Hard fallback gating based on a strict threshold is a planned enhancement (see SRS-DEF-03).
+* FR-09: The system shall cite the specific regulation or document title used to generate the response. Inline expandable citations are implemented; full side-panel UX is deferred (see SRS-DEF-07).
+3.2.4 Guest Users
+* FR-08.1: Upon accessing the chat interface, the system shall prompt the Guest to select a profile (e.g., "Individual", "Small Business (Category C)", "Large Enterprise").
+* FR-08.2: The system shall store this selection in session context to filter relevant tax laws.
+* FR-08.3: The interface shall display a persistent "Login to Save Chat" button during guest sessions.
+* FR-08.4: If a Guest user chooses to log in mid-session, the system shall associate the session history with the registered account.
+3.3 Use Cases
+
+
+  
+
+Use Case Diagram: SupportBot AI — LLM-Based Support Bot for Ethiopian Revenue Authority
+
+
+3.3.1 Use Case 1: Taxpayer Enquires about Tax Regulations (UC-01)
+Field
+	Description
+	Use Case ID
+	UC-01
+	Actor
+	Business Owner / Taxpayer (Primary)
+	Goal
+	To obtain accurate, cited answers regarding tax laws by querying the system in natural language.
+	Priority
+	High (The core value proposition of the system)
+	Preconditions
+	User has accessed the web portal. Vector database is online and populated. LLM service is operational.
+	Main Success Scenario
+	1. User types a query in Amharic or English.2. System detects language and classifies intent.3. System performs hybrid retrieval (dense + sparse + RRF).4. System generates a natural language response with citations.5. System displays the answer and renders inline citations.
+	Alternative Flows
+	A1: Low Confidence — system returns fallback message.A2: Mixed language — defaults to English.A3: Timeout — service unavailable message.
+	Post-conditions
+	Success: User receives a cited response. Failure: User receives a fallback message.
+	
+
+3.3.2 Use Case 2: Automated Knowledge Base Update (UC-02)
+Field
+	Description
+	Use Case ID
+	UC-02
+	Actor
+	System (Automated APScheduler Job)
+	Goal
+	Automatically detect, download, and index new tax directives from the MoR website without human intervention.
+	Frequency
+	Daily (Scheduled at 00:00 EAT)
+	Main Success Scenario
+	1. Scheduler triggers scraping job at 00:00 EAT.2. Scraper scans mor.gov.et for new documents.3. New documents are extracted, chunked, embedded, and indexed.4. Document status set to 'indexed'; searchable by users.
+	Alternative Flows
+	A1: No new documents — log 'No updates' and exit.A2: Site unavailable — retry 3 times with backoff; alert admin.A3: OCR failure — route to 'Requires Manual Review' status.
+	
+
+3.3.3 Use Case 3: Admin Upload Document (UC-03)
+Field
+	Description
+	Use Case ID
+	UC-03
+	Actor
+	System Administrator / Ministry Staff
+	Goal
+	Manually introduce urgent regulations into the knowledge base immediately, bypassing the daily schedule.
+	Preconditions
+	Admin is logged into the Admin Dashboard with Editor or Superadmin privileges (Better Auth session validation).
+	Main Success Scenario
+	1. Admin navigates to Knowledge Base Manager.2. Admin uploads a file via drag-and-drop (PDF, DOCX).3. System validates file, initiates extract/chunk/embed/index pipeline.4. Document status progresses through stages: pending → processing → indexed.5. Admin sees 'Processing Complete'; document is immediately searchable.
+	Alternative Flows
+	A1: Invalid format — blocked with error message.A2: Extraction failure — encoding error displayed.A3: Duplicate — system asks to overwrite or cancel.A4: Low OCR confidence — routed to 'Requires Manual Review' state.
+	
+
+3.4 Non-Functional Requirements
+3.4.1 Performance
+* NFR-01: The system shall respond to user queries in less than 5 seconds on average, with a 95th percentile latency of <8 seconds.
+* NFR-02: The scraper shall process new documents during off-peak hours (00:00–06:00 EAT) to minimize server load.
+* NFR-03: The system shall support at least 100 concurrent users without performance degradation.
+3.4.2 Accuracy & Hallucination Prevention
+* NFR-04: The system shall achieve a Top-5 Retrieval Accuracy of ≥85% (correct source document in top 5 results).
+* NFR-05: The system shall maintain a Hallucination Rate of <5% as measured by manual sampling of 100 random responses monthly.
+* NFR-06: The system shall achieve Citation Accuracy of ≥95% (cited Proclamation/Article matches the generated answer content).
+* NFR-07: The system shall implement a heuristic Confidence Score; hard threshold fallback gating is planned (see SRS-DEF-03). [Amended from SRS-CHG-06.]
+* NFR-08: The system shall correctly classify user intent with ≥90% accuracy across categories. [Full intent pipeline deferred — see SRS-DEF-01.]
+3.4.3 Reliability
+* NFR-09: The system shall implement exception handling to prevent crashes during PDF parsing errors or LLM timeouts.
+* NFR-10: The system shall maintain an Error Recovery Rate of ≥95% (automatic recovery from transient failures).
+3.4.4 Availability
+* NFR-11: The chatbot service shall be available 24/7, with a targeted uptime of 99.5%.
+* NFR-12: Scheduled maintenance windows shall not exceed 4 hours per month.
+3.4.5 Security
+* NFR-13: The system shall not request or store user Personally Identifiable Information (PII) such as TINs, names, or phone numbers beyond what is necessary for session access control.
+* NFR-14: Conversation logs used for evaluation shall be anonymized before storage.
+* NFR-15: The system shall enforce a rate limit of 15 requests per 10 minutes per unique Client IP address using Redis cache.
+* NFR-16 (amended): Admin endpoint access is enforced through role-gated Better Auth session validation (superadmin/editor roles). [Amended from JWT-only per SRS-CHG-05.]
+* NFR-17 (planned): ClamAV file scanning for uploaded documents is a planned security enhancement — see SRS-DEF-08.
+3.4.6 Multilingual Accuracy
+* NFR-18: The system shall achieve equivalent accuracy (±5%) for queries in both Amharic and English.
+* NFR-19: The system shall correctly handle code-switched queries (mixed Amharic-English) with ≥80% intent classification accuracy.
+3.4.7 Maintainability & Evaluation
+* NFR-20: The code shall follow standard linting rules (ESLint/Prettier for frontend, Black/Ruff for Python backend).
+* NFR-21: The system shall maintain version history of regulations.
+* NFR-22: The system shall log all queries and responses (anonymized) for monthly evaluation using EM, F1, and BERTScore metrics. [Pending automated pipeline — see SRS-DEF-05.]
+* NFR-23: The system shall track Session Success Rate targeting ≥80%.
+* NFR-24: The system shall measure Escalation Rate targeting <10%.
+3.5 Inverse Requirements
+41. The system shall not perform tax calculations.
+42. The system shall not allow users to file taxes directly through the chat interface.
+43. The system shall not support voice interaction in the initial release.
+44. The system shall not provide binding legal advice; all responses include a disclaimer.
+3.6 Design Constraints
+45. Language Models: Must use pre-trained multilingual models capable of processing Amharic. Custom model training is out of scope due to Amharic data scarcity.
+46. Data Residency: Cloud hosting choices should consider Ethiopian data residency guidelines if applicable.
+47. LLM Probabilistic Nature: Addressed through hybrid retrieval, confidence scoring, mandatory source citations, and structured evaluation metrics.
+48. Prompt Engineering over Fine-Tuning: The system prioritizes prompt engineering and RAG over model fine-tuning due to limited Amharic training data.
+3.7 Project Contributions & Innovations
+49. Localized RAG for Ethiopian Tax Domain: Amharic-optimized text processing with proper Unicode handling; Ethiopia-specific tax terminology mapping; bilingual knowledge base with cross-lingual retrieval.
+50. Hybrid Retrieval Architecture: BM25 keyword matching combined with dense vector retrieval (pgvector), fused via Reciprocal Rank Fusion for superior retrieval accuracy.
+51. Deterministic Evaluation Framework: Objective metrics replacing subjective assessments; automated hallucination detection through citation verification.
+52. Explainable Responses: Chain-of-retrieval transparency showing which documents informed the answer; source document lineage for audit trails.
+3.8 Logical Database Requirements
+53. Vector & Relational Storage (PostgreSQL + pgvector): Stores both high-dimensional embeddings of tax document chunks and relational system metadata, including ChatSession, Message, and Document tables. [Amended from separate Pinecone + PostgreSQL per SRS-CHG-04.]
+54. Cache Layer (Redis): Manages request rate limiting and session management support.
+3.9 Technology Stack
+The following technology stack reflects the implemented system. [This section supersedes the original Appendix A.1 per SRS-CHG-01 through SRS-CHG-05.]
+Component
+	Technology
+	Frontend
+	Next.js (React, TypeScript) + next-intl for multilingual UX
+	Backend
+	Python FastAPI + SQLAlchemy async + Alembic
+	Database
+	PostgreSQL + pgvector extension
+	Cache / Rate Limiting
+	Redis
+	LLM (Generation)
+	Gemini chat model (configurable)
+	Embeddings
+	Gemini embedding model (gemini-embedding-001, 3072-dim)
+	OCR / Extraction
+	PyMuPDF + Tesseract + HTML extraction paths
+	Deployment
+	Docker Compose (api, web, db, redis, telegram-bot services)
+	Scraping
+	BeautifulSoup / Scrapy + APScheduler
+	Auth
+	Better Auth (admin + customer channels)
+	
+
+  
+
+System Architecture: High-Level Hybrid RAG Architecture (Hybrid Retrieval + Gemini Generation)
+3.11 Other Requirements
+55. Legal: The system must include a disclaimer stating that the bot provides information for guidance only and does not replace official legal counsel.
+56. Packaging: The final deliverable shall be packaged as a Docker Compose stack for easy deployment.
+57. Telegram Integration: The system shall provide a Telegram bot interface with core conversation feature parity to the web interface.
+________________
+
+
+4. Change Management Process
+This section defines the formal protocol for modifying the project's scope, requirements, or architecture. It ensures that all changes are transparent, agreed upon by the team, and approved by the advisor before implementation.
+4.1 Change Request Lifecycle
+58. Identification: A potential change is identified by a team member, advisor, or stakeholder.
+59. Documentation & Submission: The change is formally documented via GitHub Issues (labeled change-request). Required info: description of change, justification, impact on timeline, and affected modules.
+60. Team Review & Consensus: Discussed during the weekly Project Meeting. A majority vote (3 out of 5 members) is required to proceed. Conflict resolution defaults to the Project Manager's recommendation.
+61. Advisor Consultation & Approval: Major changes (affecting scope, deadlines, or core technology) must be presented to the Project Advisor (Mr. Daniel Abebe) with Technical Feasibility and Revised Timeline.
+62. Implementation & Update: The SRS document is updated (version number incremented). All team members are notified via Telegram/Email.
+4.2 Roles and Responsibilities
+63. Project Team Members: Responsible for identifying technical risks, proposing alternatives, and participating in the voting process.
+64. Project Manager (Student Lead): Responsible for logging Change Requests in GitHub, facilitating discussions, and liaising with the Advisor.
+65. Project Advisor (Mr. Daniel Abebe): Provides final authority on changes that impact the project's academic validity or completion date.
+4.3 Documentation of Changes
+66. All approved changes must be recorded in the Revision History table of this SRS document.
+67. Meeting minutes where changes were discussed and voted upon must be saved in the shared project folder for transparency.
+________________
+
+
+5. Deferred Requirements
+The following requirements remain part of the target system scope but are formally deferred from the current release acceptance criteria. They are prioritized for implementation in subsequent development sprints. Deferred items in this section do not block release acceptance for the current version.
+ID
+	Derived From
+	Priority
+	Deferred Item Description
+	SRS-DEF-01
+	FR-15 / NFR-08
+	High
+	Full intent classification pipeline with tracked accuracy target (≥90%). Requires dedicated intent model training or fine-tuned XLM-RoBERTa deployment.
+	SRS-DEF-02
+	FR-19
+	High
+	Multi-turn context inclusion — last 5 message pairs injected into generation prompt. Follow-up quality remains below target for chained questions without this feature.
+	SRS-DEF-03
+	FR-22 / NFR-07
+	High
+	Hard low-confidence fallback gate — strict threshold blocking generation when confidence score falls below the defined threshold. Hallucination prevention controls are weaker than target design without this gate.
+	SRS-DEF-04
+	FR-37
+	High
+	Immutable admin audit log with retention controls. Admin observability for compliance-sensitive operations is incomplete without this feature.
+	SRS-DEF-05
+	FR-39 / NFR-22
+	Medium
+	Monthly automated evaluation pipeline (EM / F1 / BERTScore). No ongoing objective quality scorecards are generated until this pipeline is implemented.
+	SRS-DEF-06
+	FR-40
+	Medium
+	Full KPI analytics dashboard covering resolution rate, escalation rate, and sentiment metrics. Admin observability incomplete versus original SRS intent.
+	SRS-DEF-07
+	FR-41
+	Low
+	Complete feedback UX with response categorization in the chat UI. Feedback model and API path exist; full wiring to the UX remains pending.
+	SRS-DEF-08
+	NFR-17
+	High
+	ClamAV upload scanning integration for malware detection on admin-uploaded documents. File scanning is a planned security enhancement; currently not active.
+	________________
+
+
+6. Non-Functional Requirement Updates
+This section records targeted amendments to the non-functional requirements that align with the implemented system. The updated NFRs reflect the technology choices and operational realities discovered during development.
+ID
+	Change Description
+	SRS-CHG-10
+	Technology-coupled NFRs now specify capability outcomes (secure auth, robust retrieval, safe fallback), not fixed vendor/tool names. This allows the team to update underlying implementations without invalidating the NFR contract.
+	SRS-CHG-11
+	Performance and quality targets remain valid goals but are formally marked as operational acceptance criteria pending instrumentation tooling and benchmark suites being fully in place. They will be enforced at post-deployment review.
+	SRS-CHG-12
+	Privacy requirement wording is updated to allow persisted session content where access is protected by per-session token controls (HMAC-style). Explicit PII scrubbing and automated PII detection capabilities remain required backlog items that must be implemented before public production deployment.
+	________________
+
+
+7. Release Acceptance Baseline
+The following capabilities are considered mandatory for current release acceptance. All features listed below must be functional and verifiable before the system is accepted for deployment.
+#
+	Mandatory Capability
+	Verification Method
+	1
+	Core RAG query path (hybrid retrieval + generated answer with inline citations)
+	End-to-end query test in Amharic and English
+	2
+	Citation-bearing responses — every factual answer must carry source references
+	Manual review of 20 sampled responses
+	3
+	Admin knowledge base upload, index, and manual review flow
+	Admin uploads a PDF; confirms it becomes searchable
+	4
+	Basic role-protected admin access via Better Auth session validation
+	Verify superadmin and editor role enforcement on admin endpoints
+	5
+	Redis-backed request rate limiting (15 req / 10 min per IP)
+	Trigger rate limit via automated request script; confirm 429 response
+	6
+	Web chat interface availability with guest and registered user flows
+	Manual UX walk-through on desktop and mobile browser
+	7
+	Telegram bot core conversation integration
+	Send query via Telegram; confirm cited response received
+	
+
+Deferred items listed in Section 5 are explicitly excluded from blocking acceptance for the current release and are scheduled for subsequent sprint delivery.
+________________
+
+
+8. References
+68. Ethiopian Tax Law Assistant (2025). RAG implementation using LangChain and LLaMA3. Available: https://app.readytensor.ai/publications/ethiopian-tax-law-assistant-9zFCDKHMAuRd
+69. PiSpace (2025). Biritu Finance Bot: Guide to Financial Wellness in Ethiopia. Available: https://pispace.co/ai/projects/biritu-finance-bot
+70. Addis Ababa University. Machine Learning Models for Amharic Clinical Chatbot/NLP. Available: https://etd.aau.edu.et
+71. Lewis, P., et al. (2020). Retrieval-Augmented Generation for Knowledge-Intensive NLP Tasks. arXiv:2005.11401.
+72. International Monetary Fund (IMF) (2024). Understanding AI in Tax and Customs Administrations. Available: https://www.elibrary.imf.org/view/journals/005/2024/006/article-A001-en.xml
+73. South African Revenue Service (SARS). ChatBot Lwazi Enhancements. Available: https://www.sars.gov.za/latest-news/chatbot-lwazi-enhancements/
+74. Business Daily Africa. KRA targets small traders with WhatsApp tax invoicing. Available: https://www.businessdailyafrica.com/bd/economy/kra-targets-small-traders-with-whatsapp-tax-invoicing-4800038
+75. FastAPI Documentation. Available: https://fastapi.tiangolo.com/
+76. pgvector Extension Documentation. Available: https://github.com/pgvector/pgvector
+77. Google AI: Gemini API Documentation. Available: https://ai.google.dev/gemini-api
+________________
+
+
+Appendices
+A.1 Implemented Technology Stack (Updated)
+The following replaces Appendix A.1 in the original SRS. [Amended per SRS-CHG-01 through SRS-CHG-05.]
+78. Backend: Python FastAPI + SQLAlchemy async + Alembic
+79. Frontend: Next.js + TypeScript + next-intl
+80. AI/ML — Generation: Gemini chat model (configurable)
+81. AI/ML — Embeddings: Gemini embedding model (gemini-embedding-001, 3072-dim)
+82. Database: PostgreSQL + pgvector extension
+83. Cache: Redis (rate limiting and session support)
+84. OCR/Extraction: PyMuPDF + Tesseract + HTML extraction
+85. Scraping: BeautifulSoup / Scrapy + APScheduler
+86. Auth: Better Auth
+87. Deployment: Docker Compose
+A.2 Definitions
+88. RAG: Retrieval-Augmented Generation.
+89. LLM: Large Language Model.
+90. TIN: Taxpayer Identification Number.
+91. MoR: Ministry of Revenue.
+92. RRF: Reciprocal Rank Fusion.
+93. pgvector: PostgreSQL extension for vector similarity search.
+94. Better Auth: Session-based authentication framework used for admin and customer channels.
+School Of Information Technology and EngineeringPage

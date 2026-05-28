@@ -41,6 +41,11 @@ testpaths = ["tests", "packages/ai-engine/tests"]
 python_files = ["test_*.py"]
 python_classes = ["Test*"]
 python_functions = ["test_*"]
+markers = [
+    "unit: fast tests with no PostgreSQL",
+    "integration: API tests that require awaqi_db_test",
+    "real_embedder: skip embed_passages_sync mock (needs real model)",
+]
 
 [tool.ruff]
 target-version = "py312"

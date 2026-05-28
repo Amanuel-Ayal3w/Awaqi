@@ -20,6 +20,7 @@ import hashlib
 import logging
 import os
 import uuid
+from collections.abc import Callable
 
 import httpx
 from database.db import AsyncSessionLocal
@@ -111,9 +112,13 @@ async def run_mor_scrape_cycle(
     *,
     seed_urls: list[str] | None = None,
     max_links: int | None = None,
+    on_progress: "Callable[[int, int, str], None] | None" = None,
 ) -> dict[str, int]:
     """
     Discover PDFs via MoR API, download new/changed files, persist to disk, ingest.
+
+    Args:
+        on_progress: Optional callback(current, total, step) called after each item.
     """
     stats: dict[str, int] = {
         "discovered": 0,
@@ -139,7 +144,10 @@ async def run_mor_scrape_cycle(
         stats["discovered"] = len(all_items)
         items_to_process = all_items[:link_cap]
 
-        for item in items_to_process:
+        total_items = len(items_to_process)
+        for idx, item in enumerate(items_to_process):
+            if on_progress is not None:
+                on_progress(idx, total_items, f"Fetching: {item.title[:60]}")
             async with AsyncSessionLocal() as db:
                 try:
                     r = await fetch_with_retry(client, item.pdf_url)

@@ -14,12 +14,13 @@ import hashlib
 import logging
 import os
 import uuid
+from collections.abc import Callable
 from datetime import date, datetime, time, timezone
 from io import BytesIO
 
 from database.db import AsyncSessionLocal
 from database.models.document import Document, DocumentStatus
-from database.models.telegram import TelegramMessage, TelegramScrapeRun
+from database.models.telegram import TelegramMessage
 from sqlalchemy import select
 from telethon import TelegramClient
 from telethon.sessions import StringSession
@@ -470,6 +471,38 @@ async def _process_message(
         stats["pptx_posts"] += 1
     elif spec.message_type == "image":
         stats["image_posts"] += 1
+        # ── Image relevance gate ──────────────────────────────────────────
+        # Skip images that are too small to contain useful text OR whose
+        # OCR output is below the minimum word-count / confidence threshold.
+        from ai_engine.scraper.telegram_parse import should_ingest_image
+
+        ok, skip_reason = should_ingest_image(file_bytes)
+        if not ok:
+            logger.debug(
+                "telegram_image_skipped channel=%s msg_id=%s reason=%s bytes=%d",
+                channel,
+                message.id,
+                skip_reason,
+                len(file_bytes),
+            )
+            stats["image_posts"] -= 1  # wasn't actually ingested
+            stats["messages_skipped"] += 1
+            await _upsert_telegram_row(
+                db=db,
+                channel=channel,
+                message_id=message.id,
+                posted_at=posted_at,
+                content_part=spec.content_part,
+                message_type=spec.message_type,
+                text_preview=caption,
+                file_name=spec.filename,
+                mime_type=spec.mime_type,
+                byte_size=len(file_bytes),
+                document_id=None,
+                run_id=run_id,
+                skip_reason=skip_reason,
+            )
+            return
 
     await _ingest_bytes_as_document(
         db=db,
@@ -490,15 +523,19 @@ async def run_telegram_scrape_cycle(
     channel_username: str | None = None,
     scrape_since: date | str | None = None,
     max_messages: int | None = None,
+    message_ids: "list[int] | None" = None,
     run_id: uuid.UUID,
+    on_progress: "Callable[[int, int, str], None] | None" = None,
 ) -> dict[str, int]:
-    """Scrape channel posts from ``scrape_since`` through now (newest-first walk)."""
+    """Scrape channel posts from ``scrape_since`` through now (newest-first walk).
+
+    Args:
+        message_ids:  When provided, only fetch and process these specific message
+                      IDs (ignoring ``scrape_since`` and ``max_messages``).
+        on_progress:  Optional callback(current, total, step) for live progress.
+    """
     stats = _empty_stats()
     channel = normalize_channel(channel_username or DEFAULT_CHANNEL)
-    since_dt = _parse_since(scrape_since)
-    cap = max_messages if max_messages is not None else int(
-        os.getenv("TELEGRAM_SCRAPE_MAX_MESSAGES", "200")
-    )
 
     api_id, api_hash, session_string = _telegram_credentials()
     if not session_string:
@@ -515,38 +552,83 @@ async def run_telegram_scrape_cycle(
 
     try:
         entity = await client.get_entity(channel)
-        async for message in client.iter_messages(entity, limit=None):
-            if stats["messages_seen"] >= cap:
-                break
-            if message.date is None:
-                continue
-            posted_at = message.date
-            if posted_at.tzinfo is None:
-                posted_at = posted_at.replace(tzinfo=timezone.utc)
-            else:
-                posted_at = posted_at.astimezone(timezone.utc)
-            if posted_at < since_dt:
-                break
 
-            stats["messages_seen"] += 1
-            try:
-                async with AsyncSessionLocal() as db:
-                    await _process_message(
-                        db=db,
-                        message=message,
-                        channel=channel,
-                        posted_at=posted_at,
-                        run_id=run_id,
-                        stats=stats,
+        if message_ids:
+            # ── Selective mode: fetch only the requested IDs ──────────────
+            total = len(message_ids)
+            fetched = await client.get_messages(entity, ids=message_ids)
+            # get_messages returns None entries for missing IDs
+            messages_iter = [m for m in fetched if m is not None]
+            for idx, message in enumerate(messages_iter):
+                if message.date is None:
+                    continue
+                posted_at = message.date
+                if posted_at.tzinfo is None:
+                    posted_at = posted_at.replace(tzinfo=timezone.utc)
+                else:
+                    posted_at = posted_at.astimezone(timezone.utc)
+
+                stats["messages_seen"] += 1
+                if on_progress is not None:
+                    on_progress(idx + 1, total, f"Processing message {message.id}")
+                try:
+                    async with AsyncSessionLocal() as db:
+                        await _process_message(
+                            db=db,
+                            message=message,
+                            channel=channel,
+                            posted_at=posted_at,
+                            run_id=run_id,
+                            stats=stats,
+                        )
+                        await db.commit()
+                except Exception:
+                    logger.exception(
+                        "telegram_message_failed channel=%s msg_id=%s",
+                        channel,
+                        message.id,
                     )
-                    await db.commit()
-            except Exception:
-                logger.exception(
-                    "telegram_message_failed channel=%s msg_id=%s",
-                    channel,
-                    message.id,
-                )
-                stats["errors"] += 1
+                    stats["errors"] += 1
+        else:
+            # ── Normal mode: walk newest-first from scrape_since ──────────
+            since_dt = _parse_since(scrape_since)
+            cap = max_messages if max_messages is not None else int(
+                os.getenv("TELEGRAM_SCRAPE_MAX_MESSAGES", "200")
+            )
+            async for message in client.iter_messages(entity, limit=None):
+                if stats["messages_seen"] >= cap:
+                    break
+                if message.date is None:
+                    continue
+                posted_at = message.date
+                if posted_at.tzinfo is None:
+                    posted_at = posted_at.replace(tzinfo=timezone.utc)
+                else:
+                    posted_at = posted_at.astimezone(timezone.utc)
+                if posted_at < since_dt:
+                    break
+
+                stats["messages_seen"] += 1
+                if on_progress is not None:
+                    on_progress(stats["messages_seen"], cap, f"Processing message {message.id}")
+                try:
+                    async with AsyncSessionLocal() as db:
+                        await _process_message(
+                            db=db,
+                            message=message,
+                            channel=channel,
+                            posted_at=posted_at,
+                            run_id=run_id,
+                            stats=stats,
+                        )
+                        await db.commit()
+                except Exception:
+                    logger.exception(
+                        "telegram_message_failed channel=%s msg_id=%s",
+                        channel,
+                        message.id,
+                    )
+                    stats["errors"] += 1
     finally:
         await client.disconnect()
 

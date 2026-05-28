@@ -1,4 +1,4 @@
-.PHONY: help check build-web test test-unit test-integration lint-py dev back front dev-bot test-db
+.PHONY: help check build-web test test-unit test-integration test-web test-e2e lint-py dev back front dev-bot test-db
 
 # --- Colors ---
 GREEN  := \033[0;32m
@@ -16,6 +16,8 @@ help:
 	@echo "  $(CYAN)make test$(RESET)              Run all Python tests (unit + integration)"
 	@echo "  $(CYAN)make test-unit$(RESET)          Run only unit tests (no DB needed)"
 	@echo "  $(CYAN)make test-integration$(RESET)   Run only integration tests (needs PostgreSQL)"
+	@echo "  $(CYAN)make test-web$(RESET)           Run Vitest (frontend unit tests)"
+	@echo "  $(CYAN)make test-e2e$(RESET)           Run Playwright E2E (API + browser)"
 	@echo "  $(CYAN)make lint-py$(RESET)            Ruff lint check"
 	@echo "  $(CYAN)make dev$(RESET)                Start backend + frontend (local dev)"
 	@echo "  $(CYAN)make back$(RESET)               Start FastAPI backend only"
@@ -77,7 +79,7 @@ dev-bot:
 		uv run --package telegram-bot telegram-bot
 
 # --- Run everything ---------------------------------------------------------
-check: lint-py test build-web
+check: lint-py test test-web build-web
 	@echo ""
 	@echo "$(LINE)"
 	@echo "$(GREEN)$(BOLD)  ALL CHECKS PASSED -- safe to push$(RESET)"
@@ -127,9 +129,32 @@ test-integration: test-db
 	@echo "$(LINE)"
 	@echo "$(BOLD)  INTEGRATION TESTS (needs PostgreSQL)$(RESET)"
 	@echo "$(LINE)"
-	@uv run --package api pytest tests/api/test_health.py tests/api/test_chat_endpoints.py tests/api/test_admin_endpoints.py -v --tb=short \
+	@uv run --package api pytest tests/api/ \
+		--ignore=tests/api/test_schemas.py \
+		--ignore=tests/api/test_session_token.py \
+		-v --tb=short \
 		&& echo "" && echo "$(GREEN)--- PASS: integration tests$(RESET)" \
 		|| (echo "" && echo "$(RED)--- FAIL: integration tests -- see errors above$(RESET)" && exit 1)
+
+# --- Frontend unit tests (Vitest) -------------------------------------------
+test-web:
+	@echo ""
+	@echo "$(LINE)"
+	@echo "$(BOLD)  FRONTEND UNIT TESTS (Vitest)$(RESET)"
+	@echo "$(LINE)"
+	@cd apps/web && npm test \
+		&& echo "" && echo "$(GREEN)--- PASS: frontend unit tests$(RESET)" \
+		|| (echo "" && echo "$(RED)--- FAIL: frontend unit tests -- see errors above$(RESET)" && exit 1)
+
+# --- E2E tests (Playwright — starts API + Next.js if not running) -----------
+test-e2e: test-db
+	@echo ""
+	@echo "$(LINE)"
+	@echo "$(BOLD)  E2E TESTS (Playwright)$(RESET)"
+	@echo "$(LINE)"
+	@cd apps/web && npm run test:e2e \
+		&& echo "" && echo "$(GREEN)--- PASS: e2e tests$(RESET)" \
+		|| (echo "" && echo "$(RED)--- FAIL: e2e tests -- see errors above$(RESET)" && exit 1)
 
 # --- Next.js Frontend -------------------------------------------------------
 build-web: export BETTER_AUTH_SECRET ?= $(shell openssl rand -base64 32)

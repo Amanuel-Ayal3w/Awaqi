@@ -11,6 +11,7 @@ import {
     DropdownMenuTrigger
 } from '@/components/ui/dropdown-menu';
 import { ThemeToggle } from './ThemeToggle';
+import { NotificationBell } from '@/components/ui/notification-bell';
 import { Globe, Menu } from 'lucide-react';
 import { useSidebar } from '@/contexts/SidebarContext';
 
@@ -84,6 +85,9 @@ export function Header() {
                         </DropdownMenuItem>
                     </DropdownMenuContent>
                 </DropdownMenu>
+
+                {/* Notification Bell */}
+                <NotificationBell />
 
                 {/* Theme Toggle */}
                 <ThemeToggle />

@@ -22,11 +22,8 @@ from google.genai import types
 logger = logging.getLogger(__name__)
 
 GEMINI_EMBEDDING_MODEL = os.getenv("GEMINI_EMBEDDING_MODEL", "gemini-embedding-001")
-# Default: 1536-d (half of gemini-embedding-001's native 3072-d output).
-# Still excellent RAG quality, and within pgvector's 2000-d index limit for all
-# pgvector versions.  Override with GEMINI_EMBEDDING_DIMENSION=3072 only if you
-# are running pgvector >= 0.7.0 and have re-run migrations.
-GEMINI_EMBEDDING_DIMENSION = int(os.getenv("GEMINI_EMBEDDING_DIMENSION", "1536"))
+# Default: native 3072-d from gemini-embedding-001.
+GEMINI_EMBEDDING_DIMENSION = int(os.getenv("GEMINI_EMBEDDING_DIMENSION", "3072"))
 GEMINI_EMBED_BATCH = int(os.getenv("GEMINI_EMBED_BATCH", "32"))
 
 # Exported for DB schema alignment (see packages/database EMBEDDING_DIM).

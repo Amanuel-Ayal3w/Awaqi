@@ -58,3 +58,21 @@ services:
       REDIS_URL: redis://redis:6379/0
     depends_on:
       - api
+
+  rq-worker:
+    build:
+      context: ..
+      dockerfile: docker/api.Dockerfile
+    container_name: awaqi-rq-worker
+    command: ["uv", "run", "rq", "worker", "--url", "redis://redis:6379/0", "scraper", "ingest"]
+    env_file:
+      - ../.env
+    environment:
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-user}:${POSTGRES_PASSWORD:-password}@db:5432/${POSTGRES_DB:-awaqi_db}
+      REDIS_URL: redis://redis:6379/0
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: unless-stopped

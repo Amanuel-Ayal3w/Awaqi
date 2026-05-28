@@ -37,14 +37,6 @@ def reciprocal_rank_fusion(
     return ordered[:top_n]
 
 
-def _embed_query(text: str) -> list[float]:
-    """Use OpenAI embeddings when OPENAI_API_KEY is available, else fall back to E5."""
-    if os.getenv("OPENAI_API_KEY"):
-        from ai_engine.openai_embedder import embed_query_openai_sync
-        return embed_query_openai_sync(text)
-    return _e5_embed_query_sync(text)
-
-
 async def retrieve_fused_chunk_ids(
     db: AsyncSession,
     user_query: str,
@@ -58,7 +50,8 @@ async def retrieve_fused_chunk_ids(
     q_for_vec = build_retrieval_query_text(user_query, taxpayer_category=taxpayer_category)
 
     def _embed() -> list[float]:
-        return _embed_query(q_for_vec)
+        # Unified embedding entry point (Gemini). Keep ingest+retrieval consistent.
+        return embed_query_sync(q_for_vec)
 
     vec_task = asyncio.to_thread(_embed)
     bm25_task = bm25_search_chunk_ids(

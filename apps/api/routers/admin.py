@@ -6,11 +6,18 @@ import uuid
 from datetime import datetime, timedelta, timezone
 
 from ai_engine.ingest import ingest_bytes_for_document, ingest_plain_text
+from ai_engine.thumbnail import generate_pdf_thumbnail, thumbnail_path_for_document
 from database import get_session, ping_redis
+from database.vector_store_admin import (
+    delete_all_document_chunks,
+    get_vector_store_stats,
+    wipe_vector_embeddings,
+)
 from database.models.auth import BaUser
 from database.models.customer import CuUser
 from database.models.document import Document, DocumentChunk
 from database.models.document import DocumentStatus as DocStatusEnum
+from database.models.document import EnforcementStatus as EnforcementStatusEnum
 from database.models.session import ChatSession, Message, MessageRole
 from fastapi import (
     APIRouter,
@@ -28,19 +35,21 @@ from sqlalchemy import func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from apps.api.deps import get_current_admin
+from apps.api.queue.jobs.ingest_job import run_ingest_job
+from apps.api.queue.jobs.mor_scraper_job import run_mor_scrape_job
+from apps.api.queue.jobs.telegram_job import run_telegram_scrape_job
+from apps.api.queue.progress import publish_progress
+from apps.api.queue.queues import ingest_queue, scraper_queue
 from apps.api.document_preview import build_content_preview, get_document_or_404, load_document_bytes
 from apps.api.scraper_scheduler import apply_scheduler_config, get_next_run_time
 from apps.api.telegram_scheduler import apply_telegram_scheduler_config, get_telegram_next_run_time
 from apps.api.scraper_service import (
-    execute_scrape_run,
     get_last_scraper_run,
     get_scraper_settings,
     list_scraper_runs,
     update_scraper_settings,
 )
 from apps.api.telegram_service import (
-    execute_telegram_scrape_run,
-    get_last_telegram_run,
     get_telegram_settings,
     clear_telegram_messages,
     delete_telegram_message,
@@ -56,8 +65,13 @@ from apps.api.schemas import (
     AdminDocumentItem,
     AdminDocumentList,
     AdminDocumentPatch,
+    AdminJobEnqueued,
+    AdminNotificationConfig,
+    AdminNotificationConfigPatch,
+    AdminNotificationLogItem,
+    AdminNotificationLogList,
+    AdminNotificationTriggerResult,
     ExtractedPagePreview,
-    AdminScrapeResult,
     AdminScrapeStats,
     AdminScraperConfig,
     AdminScraperConfigPatch,
@@ -65,6 +79,8 @@ from apps.api.schemas import (
     AdminScraperRunList,
     AdminScraperStatus,
     AdminSystemHealth,
+    AdminVectorStoreActionResult,
+    AdminVectorStoreStats,
     AdminTelegramConfig,
     AdminTelegramConfigPatch,
     AdminTelegramClearResult,
@@ -72,7 +88,6 @@ from apps.api.schemas import (
     AdminTelegramMessageList,
     AdminTelegramRunItem,
     AdminTelegramRunList,
-    AdminTelegramScrapeResult,
     AdminTelegramScrapeStats,
     AdminUserItem,
     AdminUserList,
@@ -81,6 +96,7 @@ from apps.api.schemas import (
     DocumentStatusCount,
     LogEntry,
     LogEntryList,
+    TelegramScrapeRequest,
 )
 
 logger = logging.getLogger(__name__)
@@ -107,11 +123,16 @@ def _document_item_from_row(
     uploader_email: str | None,
     uploader_name: str | None,
 ) -> AdminDocumentItem:
+    enforcement = getattr(doc, "enforcement_status", None)
     return AdminDocumentItem(
         id=str(doc.id),
         title=doc.title,
         status=str(getattr(doc.status, "value", doc.status)),
+        enforcement_status=str(getattr(enforcement, "value", enforcement) or "in_effect"),
         source_url=doc.source_url,
+        source_system=doc.source_system,
+        storage_path=doc.storage_path,
+        thumbnail_url=f"/v1/admin/documents/{doc.id}/thumbnail",
         created_at=doc.created_at.isoformat(),
         processing_stage=doc.processing_stage,
         ingest_error=doc.ingest_error,
@@ -336,6 +357,56 @@ async def admin_system_health(
     )
 
 
+@router.get("/admin/vector-store", response_model=AdminVectorStoreStats)
+async def admin_vector_store_stats(
+    current_user: BaUser = Depends(get_current_admin),
+    db: AsyncSession = Depends(get_session),
+):
+    del current_user
+    stats = await get_vector_store_stats(db)
+    return AdminVectorStoreStats(**stats.to_dict())
+
+
+@router.delete(
+    "/admin/vector-store/embeddings",
+    response_model=AdminVectorStoreActionResult,
+)
+async def admin_vector_store_wipe_embeddings(
+    current_user: BaUser = Depends(get_current_admin),
+    db: AsyncSession = Depends(get_session),
+):
+    _require_superadmin(current_user)
+    affected = await wipe_vector_embeddings(db)
+    return AdminVectorStoreActionResult(
+        action="wipe_embeddings",
+        affected_rows=affected,
+        message=(
+            f"Cleared embeddings on {affected} chunk(s). "
+            "Re-run document ingest to rebuild vectors with the current model."
+        ),
+    )
+
+
+@router.delete(
+    "/admin/vector-store/chunks",
+    response_model=AdminVectorStoreActionResult,
+)
+async def admin_vector_store_delete_chunks(
+    current_user: BaUser = Depends(get_current_admin),
+    db: AsyncSession = Depends(get_session),
+):
+    _require_superadmin(current_user)
+    affected = await delete_all_document_chunks(db)
+    return AdminVectorStoreActionResult(
+        action="delete_chunks",
+        affected_rows=affected,
+        message=(
+            f"Deleted {affected} document chunk row(s). "
+            "Documents remain; re-ingest to restore searchable content."
+        ),
+    )
+
+
 @router.get("/admin/documents/{doc_id}", response_model=AdminDocumentDetail)
 async def get_admin_document(
     doc_id: str,
@@ -402,6 +473,15 @@ async def patch_admin_document(
                     detail="Uploader user not found",
                 )
             doc.uploaded_by_id = new_uploader
+
+    if "enforcement_status" in data and data["enforcement_status"] is not None:
+        try:
+            doc.enforcement_status = EnforcementStatusEnum(data["enforcement_status"])
+        except ValueError:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="enforcement_status must be 'in_effect' or 'draft'",
+            )
 
     await db.commit()
     await db.refresh(doc)
@@ -493,6 +573,55 @@ async def download_admin_document_file(
             media_type="application/pdf",
             headers={"Content-Disposition": f'inline; filename="{doc.id}.pdf"'},
         )
+
+
+@router.get("/admin/documents/{doc_id}/thumbnail")
+async def get_admin_document_thumbnail(
+    doc_id: str,
+    current_user: BaUser = Depends(get_current_admin),
+    db: AsyncSession = Depends(get_session),
+):
+    del current_user
+    try:
+        doc = await get_document_or_404(db, doc_id)
+    except ValueError:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="doc_id must be a valid UUID",
+        )
+    except LookupError:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Not found")
+
+    if not doc.storage_path or not doc.storage_path.lower().endswith(".pdf"):
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Thumbnail is available only for stored PDF documents",
+        )
+
+    thumb_path = thumbnail_path_for_document(str(doc.id))
+    if not thumb_path.is_file():
+        try:
+            thumb_path = generate_pdf_thumbnail(
+                doc_id=str(doc.id),
+                storage_path=doc.storage_path,
+            )
+        except FileNotFoundError:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Stored file not found",
+            )
+        except Exception:
+            logger.exception("thumbnail_generation_failed doc_id=%s", doc.id)
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Failed to generate thumbnail",
+            )
+
+    return FileResponse(
+        path=thumb_path,
+        media_type="image/jpeg",
+        filename=f"{doc.id}.jpg",
+    )
 
 
 @router.post("/admin/documents/{doc_id}/retry-ingest", response_model=DocumentStatus)
@@ -614,15 +743,28 @@ def _run_to_item(run) -> AdminScraperRunItem:
     )
 
 
-@router.post("/admin/scrape", response_model=AdminScrapeResult)
+@router.post("/admin/scrape", response_model=AdminJobEnqueued)
 async def trigger_scrape(
     request: Request,
     current_user: BaUser = Depends(get_current_admin),
 ):
-    """Run one MoR scrape cycle immediately (AWA-11)."""
+    """Enqueue a MoR scrape cycle via Redis Queue and return the job_id immediately (AWA-11)."""
     _require_superadmin(current_user)
-    stats = await execute_scrape_run(trigger="manual")
-    return AdminScrapeResult(status="ok", stats=_scrape_stats_from_dict(stats))
+    job_id = str(uuid.uuid4())
+    publish_progress(job_id, 0, "Queued", "queued")
+    scraper_queue.enqueue(
+        run_mor_scrape_job,
+        job_id,
+        "manual",
+        None,
+        None,
+        job_id=job_id,
+    )
+    return AdminJobEnqueued(
+        job_id=job_id,
+        status="queued",
+        message="MoR scrape job enqueued. Connect to /v1/progress/{job_id} for live progress.",
+    )
 
 
 @router.get("/admin/scraper/status", response_model=AdminScraperStatus)
@@ -731,13 +873,37 @@ def _telegram_run_item(run) -> AdminTelegramRunItem:
     )
 
 
-@router.post("/admin/telegram/scrape", response_model=AdminTelegramScrapeResult)
+@router.post("/admin/telegram/scrape", response_model=AdminJobEnqueued)
 async def trigger_telegram_scrape(
+    body: TelegramScrapeRequest = TelegramScrapeRequest(),
     current_user: BaUser = Depends(get_current_admin),
 ):
+    """Enqueue a Telegram scrape cycle via Redis Queue and return the job_id immediately.
+
+    Pass ``message_ids`` in the request body to scrape only those specific messages
+    instead of running the full time-range scan.
+    """
     _require_superadmin(current_user)
-    stats = await execute_telegram_scrape_run(trigger="manual")
-    return AdminTelegramScrapeResult(status="ok", stats=_telegram_stats_from_dict(stats))
+    job_id = str(uuid.uuid4())
+    publish_progress(job_id, 0, "Queued", "queued")
+    mode_label = (
+        f"targeted ({len(body.message_ids)} IDs)" if body.message_ids else "full scan"
+    )
+    scraper_queue.enqueue(
+        run_telegram_scrape_job,
+        job_id,
+        "manual",
+        None,
+        None,
+        None,
+        body.message_ids,
+        job_id=job_id,
+    )
+    return AdminJobEnqueued(
+        job_id=job_id,
+        status="queued",
+        message=f"Telegram scrape job enqueued ({mode_label}). Connect to /v1/progress/{job_id} for live progress.",
+    )
 
 
 @router.get("/admin/telegram/config", response_model=AdminTelegramConfig)
@@ -1035,6 +1201,7 @@ async def upload_document(
     current_user: BaUser = Depends(get_current_admin),
     db: AsyncSession = Depends(get_session),
     overwrite: bool = Query(False),
+    enforcement_status: str = Query("in_effect", description="'in_effect' or 'draft'"),
 ):
     _validate_upload_metadata(file)
     file_hash = await _sha256_with_size_limit(file)
@@ -1055,10 +1222,19 @@ async def upload_document(
             },
         )
 
+    try:
+        es = EnforcementStatusEnum(enforcement_status)
+    except ValueError:
+        es = EnforcementStatusEnum.IN_EFFECT
+
     if existing_doc is not None and overwrite:
         doc = existing_doc
         doc.title = (file.filename or doc.title)[:512]
         doc.uploaded_by_id = current_user.id
+        doc.status = DocStatusEnum.PENDING
+        doc.processing_stage = None
+        doc.ingest_error = None
+        doc.enforcement_status = es
         duplicate = True
     else:
         doc = Document(
@@ -1067,43 +1243,38 @@ async def upload_document(
             file_hash=file_hash,
             status=DocStatusEnum.PENDING,
             uploaded_by_id=current_user.id,
+            enforcement_status=es,
         )
         db.add(doc)
         await db.flush()
 
-    try:
-        pdf_bytes = await file.read()
-        await ingest_bytes_for_document(
-            db,
-            doc,
-            pdf_bytes,
-            mime_type=_guess_mime(file.filename, file.content_type),
-            filename=file.filename,
-            genai_client=None,
-        )
-        await db.refresh(doc)
-        logger.info(
-            "Document %s ingest finished status=%s",
-            doc.id,
-            getattr(doc.status, "value", doc.status),
-        )
-    except ValueError as e:
-        await db.refresh(doc)
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=str(e),
-        ) from e
-    except Exception:
-        logger.exception("Ingestion failed for document %s", doc.id)
-        await db.refresh(doc)
-        raise
+    pdf_bytes = await file.read()
+    mime_type = _guess_mime(file.filename, file.content_type)
+    doc_id = str(doc.id)
+    await db.commit()
+    await db.refresh(doc)
+
+    # Enqueue ingestion as a background RQ job so the upload request returns immediately.
+    job_id = str(uuid.uuid4())
+    publish_progress(job_id, 0, "Queued for ingestion", "queued")
+    ingest_queue.enqueue(
+        run_ingest_job,
+        job_id,
+        doc_id,
+        pdf_bytes,
+        mime_type,
+        file.filename or "upload",
+        job_id=job_id,
+    )
+    logger.info("upload_queued doc=%s job=%s", doc_id, job_id)
 
     return DocumentStatus(
-        doc_id=str(doc.id),
-        status=str(getattr(doc.status, "value", doc.status)),
+        doc_id=doc_id,
+        status="pending",
         duplicate=duplicate,
-        processing_stage=doc.processing_stage,
-        ingest_error=doc.ingest_error,
+        processing_stage=None,
+        ingest_error=None,
+        job_id=job_id,
     )
 
 
@@ -1144,4 +1315,127 @@ async def get_logs(
         ]
 
     return LogEntryList(logs=logs)
+
+
+# ─── Notification endpoints ───────────────────────────────────────────────────
+
+
+@router.get("/admin/notifications/config", response_model=AdminNotificationConfig)
+async def notification_config_get(
+    request: Request,
+    current_user: BaUser = Depends(get_current_admin),
+):
+    """Return current notification configuration (scheduler, recipients, watermark)."""
+    _require_superadmin(current_user)
+    from apps.api.notification_service import get_notification_settings
+    from apps.api.notification_scheduler import get_notification_next_run_time
+
+    s = await get_notification_settings()
+    return AdminNotificationConfig(
+        scheduler_enabled=s.scheduler_enabled,
+        interval_hours=s.interval_hours,
+        email_recipients=s.email_recipients,
+        sms_recipients=s.sms_recipients,
+        min_relevance_score=s.min_relevance_score,
+        last_checked_at=s.last_checked_at.isoformat() if s.last_checked_at else None,
+        next_run_time=get_notification_next_run_time(request.app),
+    )
+
+
+@router.patch("/admin/notifications/config", response_model=AdminNotificationConfig)
+async def notification_config_patch(
+    request: Request,
+    body: AdminNotificationConfigPatch,
+    current_user: BaUser = Depends(get_current_admin),
+):
+    """Update notification configuration and reschedule the background job."""
+    _require_superadmin(current_user)
+    from apps.api.notification_service import update_notification_settings
+    from apps.api.notification_scheduler import (
+        apply_notification_scheduler_config,
+        get_notification_next_run_time,
+    )
+
+    if body.interval_hours is not None and body.interval_hours < 1:
+        raise HTTPException(status_code=400, detail="interval_hours must be >= 1")
+    if body.min_relevance_score is not None and not (0.0 <= body.min_relevance_score <= 1.0):
+        raise HTTPException(status_code=400, detail="min_relevance_score must be between 0 and 1")
+
+    s = await update_notification_settings(
+        scheduler_enabled=body.scheduler_enabled,
+        interval_hours=body.interval_hours,
+        email_recipients=body.email_recipients,
+        sms_recipients=body.sms_recipients,
+        min_relevance_score=body.min_relevance_score,
+    )
+    await apply_notification_scheduler_config(request.app)
+
+    return AdminNotificationConfig(
+        scheduler_enabled=s.scheduler_enabled,
+        interval_hours=s.interval_hours,
+        email_recipients=s.email_recipients,
+        sms_recipients=s.sms_recipients,
+        min_relevance_score=s.min_relevance_score,
+        last_checked_at=s.last_checked_at.isoformat() if s.last_checked_at else None,
+        next_run_time=get_notification_next_run_time(request.app),
+    )
+
+
+@router.post("/admin/notifications/trigger", response_model=AdminNotificationTriggerResult)
+async def notification_trigger(
+    current_user: BaUser = Depends(get_current_admin),
+):
+    """Manually enqueue a notification check cycle via Redis Queue."""
+    _require_superadmin(current_user)
+    from apps.api.queue.jobs.notification_job import run_notification_job
+    from apps.api.queue.queues import notification_queue
+
+    job_id = str(uuid.uuid4())
+    publish_progress(job_id, 0, "Queued", "queued")
+    notification_queue.enqueue(
+        run_notification_job,
+        job_id,
+        "manual",
+        job_id=job_id,
+    )
+    return AdminNotificationTriggerResult(
+        job_id=job_id,
+        status="queued",
+        message=(
+            "Notification check enqueued. "
+            "Connect to /v1/admin/progress/{job_id} for live progress."
+        ),
+    )
+
+
+@router.get("/admin/notifications/logs", response_model=AdminNotificationLogList)
+async def notification_logs(
+    limit: int = Query(50, ge=1, le=500),
+    offset: int = Query(0, ge=0),
+    current_user: BaUser = Depends(get_current_admin),
+):
+    """Return recent notification send history (both email and SMS)."""
+    _require_superadmin(current_user)
+    from apps.api.notification_service import list_notification_logs
+
+    rows, total = await list_notification_logs(limit=limit, offset=offset)
+    return AdminNotificationLogList(
+        logs=[
+            AdminNotificationLogItem(
+                id=str(row.id),
+                doc_id=str(row.doc_id) if row.doc_id else None,
+                doc_title=row.doc_title,
+                channel=row.channel,
+                recipient=row.recipient,
+                subject=row.subject,
+                summary=row.summary,
+                status=row.status,
+                error=row.error,
+                trigger=row.trigger,
+                created_at=row.created_at.isoformat(),
+            )
+            for row in rows
+        ],
+        total=total,
+    )
 

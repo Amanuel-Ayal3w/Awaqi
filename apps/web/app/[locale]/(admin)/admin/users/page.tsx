@@ -3,7 +3,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react"
 import { ColumnDef } from "@tanstack/react-table"
-import { RefreshCw, Trash2 } from "lucide-react"
+import { Filter, RefreshCw, Search, Trash2 } from "lucide-react"
 import { adminApi } from "@/lib/api"
 import type { AdminUserItem } from "@/types/api"
 import { DataTable } from "@/components/ui/data-table"
@@ -46,6 +46,8 @@ export default function AdminUsersPage() {
     const [isDeletingUserId, setIsDeletingUserId] = useState<string | null>(null)
     const [patchingUserId, setPatchingUserId] = useState<string | null>(null)
     const [patchError, setPatchError] = useState<string | null>(null)
+    const [userSearch, setUserSearch] = useState("")
+    const [roleFilter, setRoleFilter] = useState<"all" | "editor" | "superadmin">("all")
     const [name, setName] = useState("")
     const [email, setEmail] = useState("")
     const [password, setPassword] = useState("")
@@ -78,6 +80,20 @@ export default function AdminUsersPage() {
     useEffect(() => {
         void refreshUsers()
     }, [refreshUsers])
+
+    const filteredUsers = useMemo(() => {
+        let data = users
+        if (roleFilter !== "all") data = data.filter((u) => u.role === roleFilter)
+        if (userSearch.trim()) {
+            const q = userSearch.toLowerCase()
+            data = data.filter(
+                (u) =>
+                    u.email.toLowerCase().includes(q) ||
+                    (u.name ?? "").toLowerCase().includes(q)
+            )
+        }
+        return data
+    }, [users, roleFilter, userSearch])
 
     const handleDeleteUser = async (userId: string) => {
         const shouldDelete = window.confirm("Delete this user?")
@@ -370,12 +386,38 @@ export default function AdminUsersPage() {
             {deleteError && <p className="text-sm text-destructive">{deleteError}</p>}
             {patchError && <p className="text-sm text-destructive">{patchError}</p>}
 
+            {/* Filters */}
+            <div className="flex flex-wrap items-center gap-3">
+                <div className="relative flex-1 min-w-[200px] max-w-sm">
+                    <Search className="absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                    <Input
+                        placeholder="Search by name or email…"
+                        value={userSearch}
+                        onChange={(e) => setUserSearch(e.target.value)}
+                        className="pl-8"
+                    />
+                </div>
+                <div className="flex items-center gap-2">
+                    <Filter className="h-4 w-4 text-muted-foreground" />
+                    <Select value={roleFilter} onValueChange={(v) => setRoleFilter(v as "all" | "editor" | "superadmin")}>
+                        <SelectTrigger className="w-[150px]">
+                            <SelectValue placeholder="All roles" />
+                        </SelectTrigger>
+                        <SelectContent>
+                            <SelectItem value="all">All roles</SelectItem>
+                            <SelectItem value="editor">Editor</SelectItem>
+                            <SelectItem value="superadmin">Superadmin</SelectItem>
+                        </SelectContent>
+                    </Select>
+                </div>
+            </div>
+
             {error ? (
                 <p className="text-sm text-destructive">{error}</p>
             ) : isLoading ? (
                 <p className="text-sm text-muted-foreground">Loading users…</p>
             ) : (
-                <DataTable columns={columns} data={users} />
+                <DataTable columns={columns} data={filteredUsers} />
             )}
         </div>
     )

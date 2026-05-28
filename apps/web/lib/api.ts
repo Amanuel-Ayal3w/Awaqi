@@ -6,12 +6,15 @@ import type {
     AdminDocumentContentPreview,
     AdminDocumentDetail,
     AdminDocumentList,
+    AdminJobEnqueued,
     AdminScrapeResult,
     AdminScraperConfig,
     AdminScraperConfigPatch,
     AdminScraperRunList,
     AdminScraperStatus,
     AdminSystemHealth,
+    AdminVectorStoreActionResult,
+    AdminVectorStoreStats,
     AdminTelegramClearResult,
     AdminTelegramConfig,
     AdminTelegramConfigPatch,
@@ -20,13 +23,19 @@ import type {
     AdminTelegramScrapeResult,
     AdminUserItem,
     AdminUserList,
+    Announcement,
+    AnnouncementList,
     ChatMessage,
     ChatRequest,
     ChatResponse,
     ChatSessionList,
     DocumentStatus,
+    EvaluationBenchmark,
+    EvaluationRunDetail,
+    EvaluationRunList,
     FeedbackRequest,
     LogEntryList,
+    UnreadCountResponse,
 } from "@/types/api";
 
 export interface ChatSendOptions {
@@ -34,7 +43,7 @@ export interface ChatSendOptions {
     sessionToken?: string | null;
 }
 
-const apiClient = axios.create({
+export const apiClient = axios.create({
     baseURL: process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000",
     withCredentials: true,
 });
@@ -160,12 +169,14 @@ export const chatApi = {
 export const adminApi = {
     uploadDocument: async (
         file: File,
-        options?: { overwrite?: boolean }
+        options?: { overwrite?: boolean; enforcement_status?: "in_effect" | "draft" }
     ): Promise<DocumentStatus> => {
         const formData = new FormData();
         formData.append("file", file);
-        const q =
-            options?.overwrite === true ? "?overwrite=true" : "";
+        const params = new URLSearchParams();
+        if (options?.overwrite === true) params.set("overwrite", "true");
+        if (options?.enforcement_status) params.set("enforcement_status", options.enforcement_status);
+        const q = params.toString() ? `?${params.toString()}` : "";
         const { data } = await apiClient.post<DocumentStatus>(
             `/v1/admin/upload${q}`,
             formData,
@@ -181,8 +192,8 @@ export const adminApi = {
         return data;
     },
 
-    triggerScrape: async (): Promise<AdminScrapeResult> => {
-        const { data } = await apiClient.post<AdminScrapeResult>("/v1/admin/scrape");
+    triggerScrape: async (): Promise<AdminJobEnqueued> => {
+        const { data } = await apiClient.post<AdminJobEnqueued>("/v1/admin/scrape");
         return data;
     },
 
@@ -225,6 +236,25 @@ export const adminApi = {
 
     getSystemHealth: async (): Promise<AdminSystemHealth> => {
         const { data } = await apiClient.get<AdminSystemHealth>("/v1/admin/system-health");
+        return data;
+    },
+
+    getVectorStoreStats: async (): Promise<AdminVectorStoreStats> => {
+        const { data } = await apiClient.get<AdminVectorStoreStats>("/v1/admin/vector-store");
+        return data;
+    },
+
+    wipeVectorEmbeddings: async (): Promise<AdminVectorStoreActionResult> => {
+        const { data } = await apiClient.delete<AdminVectorStoreActionResult>(
+            "/v1/admin/vector-store/embeddings"
+        );
+        return data;
+    },
+
+    deleteAllVectorChunks: async (): Promise<AdminVectorStoreActionResult> => {
+        const { data } = await apiClient.delete<AdminVectorStoreActionResult>(
+            "/v1/admin/vector-store/chunks"
+        );
         return data;
     },
 
@@ -339,9 +369,11 @@ export const adminApi = {
         return data;
     },
 
-    triggerTelegramScrape: async (): Promise<AdminTelegramScrapeResult> => {
-        const { data } = await apiClient.post<AdminTelegramScrapeResult>(
-            "/v1/admin/telegram/scrape"
+    triggerTelegramScrape: async (messageIds?: number[]): Promise<AdminJobEnqueued> => {
+        const body = messageIds && messageIds.length > 0 ? { message_ids: messageIds } : {};
+        const { data } = await apiClient.post<AdminJobEnqueued>(
+            "/v1/admin/telegram/scrape",
+            body
         );
         return data;
     },
@@ -405,6 +437,48 @@ export const adminApi = {
         const q = options?.force_index ? "?force_index=true" : "";
         const { data } = await apiClient.post<{ status: string }>(
             `/v1/admin/telegram/messages/${rowId}/reingest${q}`
+        );
+        return data;
+    },
+
+    listEvaluationRuns: async (): Promise<EvaluationRunList> => {
+        const { data } = await apiClient.get<EvaluationRunList>(
+            `/v1/admin/evaluation/runs`
+        );
+        return data;
+    },
+
+    getEvaluationRun: async (runId: string): Promise<EvaluationRunDetail> => {
+        const { data } = await apiClient.get<EvaluationRunDetail>(
+            `/v1/admin/evaluation/runs/${encodeURIComponent(runId)}`
+        );
+        return data;
+    },
+
+    getEvaluationBenchmark: async (): Promise<EvaluationBenchmark> => {
+        const { data } = await apiClient.get<EvaluationBenchmark>(
+            `/v1/admin/evaluation/benchmark`
+        );
+        return data;
+    },
+};
+
+// ── Announcements (in-app notifications for user portal) ──────────────────────
+
+export const announcementsApi = {
+    list: async (options?: { limit?: number; since?: string }): Promise<AnnouncementList> => {
+        const params = new URLSearchParams();
+        if (options?.limit) params.set("limit", String(options.limit));
+        if (options?.since) params.set("since", options.since);
+        const { data } = await apiClient.get<AnnouncementList>(
+            `/v1/announcements?${params.toString()}`
+        );
+        return data;
+    },
+
+    unreadCount: async (since: string): Promise<UnreadCountResponse> => {
+        const { data } = await apiClient.get<UnreadCountResponse>(
+            `/v1/announcements/unread-count?since=${encodeURIComponent(since)}`
         );
         return data;
     },

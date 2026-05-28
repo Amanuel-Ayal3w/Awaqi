@@ -1,0 +1,283 @@
+{
+  "name": "Ethiopian Tax Q&A Benchmark v1",
+  "description": "Curated questions and expected answers from the Federal Income Tax Regulation 410/2017 and Income Tax (Amendment) Proclamation 1395/2017 (2025). Each item carries a legal-reference ground-truth used for retrieval Precision@k / Recall@k / MRR / NDCG.",
+  "source_file": "kb/evaluaiton-question-and-answer",
+  "items": [
+    {
+      "id": "reg410-q01-residence-183",
+      "question": "አንድ ሰው በኢትዮጵያ 183 ቀን ቢቆይ ነዋሪ ተብሎ ይቆጠራል?",
+      "expected_answer": "አዎ፣ ይቆጠራል። በደንብ 410/2017 አንቀጽ 5(1) መሠረት ግለሰብ ወደ ኢትዮጵያ የገባበትን እና የወጣበትን ቀን (ከፊል ቀናትን ጨምሮ) እንደ ሙሉ ቀን ይቆጠራል። የሕዝብ በዓላት፣ የዕረፍት ቀናት፣ የህመም ፈቃድ እና በሥራ ማቆም አድማ ምክንያት የተቋረጡ ቀናት ሁሉ ይካተታሉ። በ12 ወራት ጊዜ ውስጥ በድምሩ 183 ቀናት ወይም ከዚያ በላይ ከተገኘ 'ነዋሪ ግለሰብ' ይባላል። ትራንዚት ቆይታ አይቆጠርም።",
+      "language": "am",
+      "topic": "tax_residence",
+      "ground_truth": {
+        "proclamation_number": "410/2017",
+        "article_numbers": ["5", "5(1)"],
+        "keywords": ["ነዋሪ", "183 ቀን", "ቆይታ", "resident", "183 days"]
+      }
+    },
+    {
+      "id": "reg410-q02-housing-fringe-benefit",
+      "question": "ቀጣሪዬ ቤት ከሰጠኝ እንደ ገቢ ይቆጠራል?",
+      "expected_answer": "አዎ፣ እንደ ዓይነት ጥቅም ይቆጠራል። በደንብ 410/2017 አንቀጽ 8(1)(ሐ) እና አንቀጽ 11 መሠረት ቤቱ የቀጣሪው ንብረት ከሆነ ትክክለኛ የገበያ የኪራይ ዋጋ ተቀጣሪው ከከፈለው ተቀንሶ ልዩነቱ እንደ ገቢ ይቆጠራል። ቤቱ በቀጣሪው ተከራይቶ የተሰጠ ከሆነ ቀጣሪው የሚከፍለው ወርሃዊ ኪራይ ተቀጣሪው ከከፈለው ተቀንሶ ልዩነቱ ላይ ግብር ይከፈላል።",
+      "language": "am",
+      "topic": "fringe_benefit_housing",
+      "ground_truth": {
+        "proclamation_number": "410/2017",
+        "article_numbers": ["8", "8(1)(c)", "11"],
+        "keywords": ["መኖሪያ ቤት", "ኪራይ", "fringe benefit", "housing"]
+      }
+    },
+    {
+      "id": "reg410-q03-vehicle-fringe-benefit",
+      "question": "የድርጅት መኪና ለግል ጥቅም ከተጠቀምኩ ግብር ይኖረዋል?",
+      "expected_answer": "አዎ፣ ግብር አለው። በደንብ 410/2017 አንቀጽ 8(1)(ቀ) እና አንቀጽ 14 መሠረት ቀጣሪ ለተቀጣሪው ለግል ጥቅም የሚያቀርበው ተሽከርካሪ ግብር ይታሰብበታል። የወር ጥቅሙ ዋጋ = (የተሽከርካሪው መግዣ ወይም የገበያ ዋጋ × 5%) ÷ 12። ለሥራ ጉዳይ የተጠቀመበት መጠን እና ለግል ጥቅም ያልቀረበበት ቀናት ተቀናሽ ይደረጋሉ።",
+      "language": "am",
+      "topic": "fringe_benefit_vehicle",
+      "ground_truth": {
+        "proclamation_number": "410/2017",
+        "article_numbers": ["8", "8(1)", "14"],
+        "keywords": ["ተሽከርካሪ", "መኪና", "vehicle", "5%"]
+      }
+    },
+    {
+      "id": "reg410-q04-low-interest-loan",
+      "question": "ከቀጣሪዬ ዝቅተኛ ወለድ ብድር ብወስድ ግብር ይጣልበታል?",
+      "expected_answer": "አዎ፣ ግብር ይጣልበታል። በደንብ 410/2017 አንቀጽ 8(1)(መ) እና አንቀጽ 12 መሠረት ቀጣሪ ለተቀጣሪው የሚሰጠው የብድር ወለድ ከገበያ የማበደሪያ ወለድ መጣኔ የሚያንስ ከሆነ የቅናሽ ወለድ ብድር የዓይነት ጥቅም ይባላል። ግብር የሚከፈልበት ዋጋ = (በገበያው ዝቅተኛ የንግድ ባንኮች ወለድ መጣኔ ሊከፍል ይችል ከነበረው ወለድ) − (በተግባር ለቀጣሪው የከፈለው ወለድ)።",
+      "language": "am",
+      "topic": "fringe_benefit_loan",
+      "ground_truth": {
+        "proclamation_number": "410/2017",
+        "article_numbers": ["8", "8(1)", "12"],
+        "keywords": ["ብድር", "ወለድ", "loan", "discounted interest"]
+      }
+    },
+    {
+      "id": "reg410-q05-mobile-phone-exempt",
+      "question": "ቀጣሪ የስልክ ወጪ ቢከፍልልኝ ግብር አለ?",
+      "expected_answer": "አይ፣ ግብር የለበትም። በደንብ 410/2017 አንቀጽ 8(4)(ሠ) እና (ረ) መሠረት በቀጣሪው የሚቀርብ ተንቀሳቃሽ ስልክ (ሞባይል) እና ቀጣሪው የሚሸፍነው የተንቀሳቃሽ ስልክ ጥሪዎች ወጪ እንደ ዓይነት ጥቅም ስለማይቆጠሩ ግብር አይከፈልባቸውም።",
+      "language": "am",
+      "topic": "exempt_benefits",
+      "ground_truth": {
+        "proclamation_number": "410/2017",
+        "article_numbers": ["8(4)", "8(4)(e)", "8(4)(f)"],
+        "keywords": ["ሞባይል", "ስልክ", "mobile phone", "exempt"]
+      }
+    },
+    {
+      "id": "reg410-q06-rent-paid-by-employer",
+      "question": "የቤት ኪራይ ቀጣሪ ቢከፍልልኝ ገቢ ይቆጠራል?",
+      "expected_answer": "አዎ፣ እንደ ገቢ ይቆጠራል። በደንብ 410/2017 አንቀጽ 11(2) መሠረት ቀጣሪው ለሠራተኛው የመኖሪያ ቤት ተከራይቶ የሚሸፍን ከሆነ ቀጣሪው በወሩ የከፈለው የኪራይ መጠን (ሠራተኛው የከፈለው ካለ ተቀንሶ) እንደ ጥቅማጥቅም ገቢ ተቆጥሮ ከመደበኛ ደመወዙ ጋር ተደምሮ የቅጥር ገቢ ግብር ይከፈልበታል።",
+      "language": "am",
+      "topic": "fringe_benefit_housing",
+      "ground_truth": {
+        "proclamation_number": "410/2017",
+        "article_numbers": ["11", "11(2)"],
+        "keywords": ["ኪራይ", "መኖሪያ ቤት", "rent", "employer"]
+      }
+    },
+    {
+      "id": "reg410-q07-remote-housing-exempt",
+      "question": "በሩቅ ቦታ የተሰጠ መኖሪያ ቤት ግብር አለበት?",
+      "expected_answer": "ለሥራ አመራር አካል (ማናጀር) ካልሆነ ሠራተኛ በቀር ግብር የለበትም። በደንብ 410/2017 አንቀጽ 8(4)(መ) መሠረት የሥራ አመራር ላልሆነ ተቀጣሪ በሩቅ ሥፍራ የሚቀርብ የመኖሪያ ቤት አገልግሎት ከግብር ነፃ የሚሆነው የተቀጣሪው መደበኛ የሥራ ቦታ በዚያው ሩቅ ሥፍራ ሲሆን፣ ወይም ሠራተኛው በተደጋጋሚ የሚንቀሳቀስ ሲሆን፣ ወይም በቦታው በቂ መኖሪያ ቤት ሳይኖር ቀጣሪው ቤት ማቅረቡ አስፈላጊ ሆኖ ሲገኝ ብቻ ነው። (ሩቅ ሥፍራ = 20,000 ነዋሪ ካለው የከተማ መሃል 30 ኪ.ሜ ርቀት)።",
+      "language": "am",
+      "topic": "exempt_benefits",
+      "ground_truth": {
+        "proclamation_number": "410/2017",
+        "article_numbers": ["8(4)", "8(4)(d)"],
+        "keywords": ["ሩቅ ሥፍራ", "remote area", "30 km", "non-managerial"]
+      }
+    },
+    {
+      "id": "reg410-q08-meal-allowance",
+      "question": "የሠራተኛ ምግብ አበል ግብር ይከፈልበታል?",
+      "expected_answer": "ሁኔታዎችን ያገናዝባል። በደንብ 410/2017 አንቀጽ 8(4)(ሐ) መሠረት በቀጣሪው ካፌቴሪያ ለመደበኛ ሠራተኞች ሁሉ ያለምንም ልዩነት እኩል የሚቀርብ የምግብና መጠጥ አገልግሎት ድጎማ ከግብር ነፃ ነው። የሆቴል/ሬስቶራንት ሠራተኞች በዚያው ተቋም የሚቀርብላቸው ምግብም ነፃ ነው። ግን ለተወሰኑ ሰዎች ብቻ በጥሬ ገንዘብ ወይም በልዩ ሁኔታ የሚሰጥ ምግብ አበል ከሆነ በአንቀጽ 8(1)(ሠ) መሠረት ግብር ይከፈልበታል።",
+      "language": "am",
+      "topic": "exempt_benefits",
+      "ground_truth": {
+        "proclamation_number": "410/2017",
+        "article_numbers": ["8", "8(1)(e)", "8(4)(c)"],
+        "keywords": ["ምግብ", "ካፌቴሪያ", "meal", "cafeteria"]
+      }
+    },
+    {
+      "id": "proc1395-q01-category-a-vs-b",
+      "question": "የደረጃ 'ሀ' እና የደረጃ 'ለ' ግብር ከፋዮች ልዩነታቸው ምንድን ነው?",
+      "expected_answer": "በማሻሻያ አዋጅ 1395/2017 መሠረት የደረጃ 'ሀ' ግብር ከፋይ = ማናቸውም ድርጅት (Body) ወይም አመታዊ ጠቅላላ ገቢው ብር 2,000,000 (ሁለት ሚሊዮን ብር) እና ከዚያ በላይ የሆነ ሌላ ሰው። የደረጃ 'ለ' ግብር ከፋይ = ድርጅቶችን ሳይጨምር አመታዊ ጠቅላላ ገቢው ከብር 2,000,000 የሚያንስ ማንኛውም ሰው።",
+      "language": "am",
+      "topic": "taxpayer_category",
+      "ground_truth": {
+        "proclamation_number": "1395/2017",
+        "article_numbers": ["2"],
+        "keywords": ["ደረጃ ሀ", "ደረጃ ለ", "2,000,000", "Category A", "Category B"]
+      }
+    },
+    {
+      "id": "proc1395-q02-salary-8000",
+      "question": "ወርሃዊ ደመወዝ 8,000 ብር ከሆነ ምን ያህል የገቢ ግብር ይከፈላል?",
+      "expected_answer": "በማሻሻያ አዋጅ 1395/2017 አንቀጽ 11 መሠረት 8,000 ብር ወርሃዊ ደመወዝ ላይ የሚተገበረው ስሌት፦ ከመጀመሪያው 2,000 ብር → 0% = 0 ብር፤ ከ2,001–4,000 (2,000) → 15% = 300 ብር፤ ከ4,001–7,000 (3,000) → 20% = 600 ብር፤ ከ7,001–8,000 (1,000) → 25% = 250 ብር። ጠቅላላ ወርሃዊ የደመወዝ ግብር = 1,150 ብር።",
+      "language": "am",
+      "topic": "employment_income",
+      "ground_truth": {
+        "proclamation_number": "1395/2017",
+        "article_numbers": ["11"],
+        "keywords": ["ደመወዝ", "salary", "25%", "1,150", "slab"]
+      }
+    },
+    {
+      "id": "proc1395-q03-digital-content-creation",
+      "question": "በYouTube ወይም TikTok ገቢ የማገኝ ከሆነ ግብር መክፈል አለብኝ?",
+      "expected_answer": "አዎ፣ መክፈል አለብዎት። በማሻሻያ አዋጅ 1395/2017 አንቀጽ 2(29) መሠረት 'ከዲጂታል ይዘት ፈጠራ የሚገኝ ገቢ' (Income from Digital Content Creation) ተብሎ ተፈርጇል። ይህ YouTube፣ TikTok እና ሌሎች ኦንላይን መድረኮችን ጨምሮ ከማስታወቂያ፣ ስፖንሰርሺፕ፣ የደጋፊዎች አስተዋጽኦ እና ስጦታዎች የሚገኝ ገቢ ሁሉ ግብር የመክፈል ግዴታ አለበት።",
+      "language": "am",
+      "topic": "digital_income",
+      "ground_truth": {
+        "proclamation_number": "1395/2017",
+        "article_numbers": ["2", "2(29)"],
+        "keywords": ["ዲጂታል ይዘት", "YouTube", "TikTok", "digital content creation"]
+      }
+    },
+    {
+      "id": "proc1395-q04-rental-50000",
+      "question": "ከቤት ኪራይ 50,000 ብር ገቢ ቢኖረኝ ምን ዓይነት የግብር መጣኔ ይተገበራል?",
+      "expected_answer": "በማሻሻያ አዋጅ 1395/2017 አንቀጽ 14 (የኪራይ ገቢ ግብር ሰንጠረዥ) መሠረት ገቢው አመታዊ 50,000 ብር ከሆነ ከ48,001–84,000 ብር ክልል ውስጥ ስለሚወድቅ የሚተገበረው የግብር መጣኔ 20% ነው። ገቢው ወርሃዊ 50,000 ብር (አመታዊ 600,000) ከሆነ ግን ከ168,000 ብር በላይ ስለሚሆን 35% የግብር መጣኔ ይተገበራል።",
+      "language": "am",
+      "topic": "rental_income",
+      "ground_truth": {
+        "proclamation_number": "1395/2017",
+        "article_numbers": ["14"],
+        "keywords": ["ኪራይ", "rental", "20%", "35%", "ሰንጠረዥ"]
+      }
+    },
+    {
+      "id": "proc1395-q05-non-resident-digital",
+      "question": "ከኢትዮጵያ ውጭ ያለ ሰው ለኢትዮጵያ ዲጂታል አገልግሎት ቢሰጥ ግብር ይከፍላል?",
+      "expected_answer": "አዎ፣ ይከፍላል። በማሻሻያ አዋጅ 1395/2017 አንቀጽ 6 ንዑስ አንቀጽ 6 መሠረት 'በኢትዮጵያ ነዋሪ ያልሆነ ሰው የዲጂታል አገልግሎት በመስጠት የሚያገኘው ገቢ በኢትዮጵያ ውስጥ የተገኘ ገቢ እንደሆነ ይቆጠራል' ተብሎ ተደንግጓል። አገልግሎቱ ለኢትዮጵያ እስከተሰጠ ድረስ የግብር ግዴታ አለበት።",
+      "language": "am",
+      "topic": "non_resident_digital",
+      "ground_truth": {
+        "proclamation_number": "1395/2017",
+        "article_numbers": ["6", "6(6)"],
+        "keywords": ["ነዋሪ ያልሆነ", "ዲጂታል አገልግሎት", "non-resident", "digital service"]
+      }
+    },
+    {
+      "id": "reg410-q09-exempt-payments-list",
+      "question": "ከደመወዝ ግብር ነፃ የሚሆኑ ክፍያዎች ምንድናቸው?",
+      "expected_answer": "በደንብ 410/2017 አንቀጽ 8(4) እና 54 መሠረት ከደመወዝ ግብር ነፃ የሆኑ ጥቅማጥቅሞች፦ የሕክምና ወጪና ኢንሹራንስ አረቦን፤ በቀጣሪ ካፌቴሪያ ለሁሉም መደበኛ ሠራተኞች በእኩልነት የሚቀርብ ምግብ/መጠጥ ድጎማ፤ ተንቀሳቃሽ ስልክና የጥሪ ወጪ፤ ለትምህርት/ሥልጠና በቀጣሪ የሚከፈል ክፍያ፤ የደህንነት ጥበቃ ሠራተኛ፣ የደንብ ልብስ እና የሥራ መገልገያ ቁሶች፤ ለወጪ ንግድ ባለሀብቶች ከውጭ የሚመጡ ባለሙያዎች ለ5 ዓመት የሚከፈል ቅጥር ገቢ፤ ለ12 ወራት ውስጥ ለአንድ ቀጣሪ ከ30 ቀን ላልበለጠ ጊዜ የሚሰራ ጊዜያዊ ሠራተኛ ገቢ፤ ለሥራ አመራር ላልሆነ ሠራተኛ በሩቅ ሥፍራ የሚቀርብ መኖሪያ።",
+      "language": "am",
+      "topic": "exempt_benefits",
+      "ground_truth": {
+        "proclamation_number": "410/2017",
+        "article_numbers": ["8(4)", "54"],
+        "keywords": ["ነፃ", "exempt", "ሕክምና", "ስልክ", "ትምህርት", "uniform"]
+      }
+    },
+    {
+      "id": "reg410-q10-categories-abc",
+      "question": "የCategory A, B, C ግብር ከፋዮች እንዴት ይከፋፈላሉ?",
+      "expected_answer": "በደንብ 410/2017 መሠረት፦ ደረጃ 'ሀ' (Category A) = አመታዊ ጠቅላላ ሽያጭ ገቢ 500,000 ብር እና ከዚያ በላይ — ሙሉ የሂሳብ መዝገብ ይይዛሉ። ደረጃ 'ለ' (Category B) = ከ100,000 ብር በላይ እና ከ500,000 ብር በታች — ቀለል ያለ የሂሳብ መዝገብ ይይዛሉ። ደረጃ 'ሐ' (Category C) = እስከ 100,000 ብር አመታዊ ሽያጭ — ግብር በባለስልጣን የገቢ ግምት ይሰላል (በደንቡ አባሪ ሰንጠረዥ መሠረት)።",
+      "language": "am",
+      "topic": "taxpayer_category",
+      "ground_truth": {
+        "proclamation_number": "410/2017",
+        "article_numbers": [],
+        "keywords": ["Category A", "Category B", "Category C", "500,000", "100,000", "ደረጃ"]
+      }
+    },
+    {
+      "id": "reg410-q11-donation-deduction",
+      "question": "ስጦታ ወይም ልገሳ ከግብር ቅናሽ የሚደረግበት ሁኔታ ምንድነው?",
+      "expected_answer": "በደንብ 410/2017 አንቀጽ 33 መሠረት ለበጎ አድራጎት ዓላማ የተደረገ ስጦታ/ልገሳ ከንግድ ሥራ ገቢ ላይ ተቀናሽ ሊደረግ ይችላል፦ (1) ልገሳው ከታክስ ከፋዩ ሠራተኞች ውጭ ለሆኑ ተረጂዎች ለትምህርት፣ ለጤና፣ ለአካባቢ ጥበቃ ወይም ለሌላ ማህበራዊ አገልግሎት ሲውል፤ (2) ግብር ከፋዩ ራሱ ለሚያካሂደው የበጎ አድራጎት ተግባር ሲውል፤ (3) በፌደራል/ክልል መንግሥት ወይም በአዲስ አበባ/ድሬዳዋ ከተማ አስተዳደሮች ለቀረበ የመንግሥት ጥሪ ምላሽ ሲሰጥ።",
+      "language": "am",
+      "topic": "deductions",
+      "ground_truth": {
+        "proclamation_number": "410/2017",
+        "article_numbers": ["33"],
+        "keywords": ["ልገሳ", "ስጦታ", "donation", "deduction", "በጎ አድራጎት"]
+      }
+    },
+    {
+      "id": "reg410-q12-rental-gross-income",
+      "question": "የቤት ኪራይ ገቢ ግብር ሲሰላ በጠቅላላ ገቢ ውስጥ ምን ይካተታል?",
+      "expected_answer": "በደንብ 410/2017 ሰንጠረዥ 'ለ' እና አንቀጽ 32 መሠረት የአከራዩ ጠቅላላ ገቢ (Gross Income) ውስጥ የሚካተተው፦ ከቤት ኪራይ የተገኘ መደበኛ የኪራይ ክፍያ ድምር፤ ተከራዩ በአከራዩ ስም የከፈላቸው ክፍያዎች (ለምሳሌ የቤት ግብር፣ መብራት/ውሃ)፤ ተከራዩ ለአከራዩ የሰጣቸው ማናቸውም በዓይነት የሚገለጡ ጥቅሞች እሴት፤ እና ተከራዩ ከውል ውጪ በገዛ ፈቃዱ የተከራየውን ንብረት ካደሰ/ካሻሻለ የተደረገው ማሻሻያ እንደ ገቢ ይቆጠራል። አዲስ የሚከራይ ቤት ሲጠናቀቅ ወይም ሲከራይ በአንድ ወር ጊዜ ውስጥ ለታክስ ባለስልጣን ማሳወቅ ግዴታ ነው (አንቀጽ 26)።",
+      "language": "am",
+      "topic": "rental_income",
+      "ground_truth": {
+        "proclamation_number": "410/2017",
+        "article_numbers": ["26", "32"],
+        "keywords": ["ኪራይ", "ጠቅላላ ገቢ", "gross rental income", "Schedule B"]
+      }
+    },
+    {
+      "id": "reg410-q13-withholding-2percent",
+      "question": "ባለ 2% የተቀናሽ ግብር (Withholding Tax) እንዴት ይተገበራል?",
+      "expected_answer": "በኢትዮጵያ የታክስ ሕግ መሠረት 2% Withholding Tax የሚቆረጠው፦ የደረጃ 'ሀ' (Category A) የንግድ ድርጅቶች፣ የመንግሥት መሥሪያ ቤቶች እና መንግሥታዊ ያልሆኑ ድርጅቶች (NGOs) ከሌሎች ድርጅቶች ወይም ግለሰቦች ዕቃ ሲገዙ ወይም አገልግሎት ሲከፍሉ ግብር ቀንሰው የማስቀረት ግዴታ አለባቸው። የገንዘብ መጠን ገደብ፦ ለዕቃ ግዢ ከታክስ በፊት ከ10,000 ብር በላይ፣ ለአገልግሎት ከ3,000 ብር በላይ ሲሆን 2% ተቀንሶ ለታክስ ባለስልጣን ገቢ ይደረጋል። ክፍያ ፈፃሚው አካል ግብሩን በሚቆርጥበት ቀን Withholding Receipt ለተከፋዩ መስጠት አለበት።",
+      "language": "am",
+      "topic": "withholding_tax",
+      "ground_truth": {
+        "proclamation_number": "410/2017",
+        "article_numbers": [],
+        "keywords": ["2%", "withholding", "ተቀናሽ ግብር", "10,000", "3,000", "Category A"]
+      }
+    },
+    {
+      "id": "reg410-q14-permanent-establishment",
+      "question": "'በቋሚነት የሚሠራ ድርጅት (Permanent Establishment)' ምን ማለት ነው?",
+      "expected_answer": "በደንብ 410/2017 አንቀጽ 4 መሠረት የ183 ቀናት የቆይታ ጊዜ ገደብ ለመወሰን፦ የግለሰብ/ድርጅት የራሱ ፕሮጀክት ብቻ ሳይሆን ከእሱ ጋር 'ግንኙነት ያለው ሰው (Related person)' የሚያከናውነው ተያያዥ ፕሮጀክት በጋራ ከግምት ውስጥ መግባት አለበት። የግንባታ ቦታ/ፕሮጀክት ሲሰራ፣ ግንኙነት ባለው ሰው የተከናወነ ተያያዥ ሥራ መጀመሪያ የተጠቀሰው ሰው ሥራ በወሰደው ጊዜ ላይ ተደምሮ ይሰላል። ድምሩ ከ183 ቀናት የሚበልጥ ከሆነ Permanent Establishment እንደሆነ ይወሰናል።",
+      "language": "am",
+      "topic": "permanent_establishment",
+      "ground_truth": {
+        "proclamation_number": "410/2017",
+        "article_numbers": ["4"],
+        "keywords": ["Permanent Establishment", "ቋሚነት", "183 ቀናት", "related person"]
+      }
+    },
+    {
+      "id": "reg410-q15-fringe-benefits-types",
+      "question": "ቀጣሪ ለተቀጣሪ የሚሰጣቸው የ Fringe Benefits ዓይነቶች ምን ምን ናቸው?",
+      "expected_answer": "በደንብ 410/2017 አንቀጽ 8(1) መሠረት የዓይነት ጥቅሞች (Fringe benefits)፦ (ሀ) ከዕዳ ነፃ የመደረግ ጥቅም፤ (ለ) የቤተሰብ አገልግሎት ሠራተኞች (የቤት ሠራተኛ፣ ምግብ አብሳይ፣ ሾፌር፣ አትክልተኛ)፤ (ሐ) የመኖሪያ ቤት/ማረፊያ ጥቅም፤ (መ) የቅናሽ ወለድ ብድር ጥቅም፤ (ሠ) የምግብ/መጠጥ አገልግሎት ጥቅም፤ (ረ) የግል ወጪዎችን የመሸፈን ጥቅም፤ (ሰ) የንብረት ወይም አገልግሎቶች ጥቅም፤ (ሸ) የሠራተኞች የአክሲዮን ዐቅድ (Employee share scheme)፤ (ቀ) የተሽከርካሪ ጥቅም፤ (በ) ሌላ ማንኛውም የዓይነት ጥቅም (Residual fringe benefit)።",
+      "language": "am",
+      "topic": "fringe_benefit_types",
+      "ground_truth": {
+        "proclamation_number": "410/2017",
+        "article_numbers": ["8", "8(1)"],
+        "keywords": ["fringe benefit", "ዓይነት ጥቅም", "vehicle", "housing", "loan"]
+      }
+    },
+    {
+      "id": "reg410-q16-vehicle-formula",
+      "question": "የተሽከርካሪ የዓይነት ጥቅም (Vehicle Fringe Benefit) ዋጋ እንዴት ይሰላል?",
+      "expected_answer": "በደንብ 410/2017 አንቀጽ 14 መሠረት የወር የተሽከርካሪ ዓይነት ጥቅም ዋጋ = (A × 5%) ÷ 12። A = ቀጣሪ ተሽከርካሪውን ለመግዛት ያወጣው ወጪ፤ ወይም ተከራይቶ ከሆነ ኪራዩ በሚጀምርበት ጊዜ የነበረው ትክክለኛ የገበያ ዋጋ። ከቀረጥ ነፃ ሆኖ የገባ ከሆነ A ቀረጡን ጨምሮ ይታሰባል። ከ5 ዓመት በላይ የቆየ ከሆነ A 50% ብቻ ይወሰዳል። ተቀጣሪው ለነዳጅ/ጥገና የከፈለው፣ ለሥራ የተጠቀመበት ድርሻ፣ እና ለግል ጥቅም ሳይቀርብ የቀረበት ቀናት ድርሻ ተቀናሽ ይደረጋሉ።",
+      "language": "am",
+      "topic": "fringe_benefit_vehicle",
+      "ground_truth": {
+        "proclamation_number": "410/2017",
+        "article_numbers": ["14"],
+        "keywords": ["ተሽከርካሪ", "vehicle", "A × 5%", "formula", "50%"]
+      }
+    },
+    {
+      "id": "reg410-q17-resident-day-count",
+      "question": "'Resident Individual' (ነዋሪ ግለሰብ) ለመወሰን የቆይታ ቀናት እንዴት ይቆጠራሉ?",
+      "expected_answer": "በደንብ 410/2017 አንቀጽ 5 መሠረት፦ ወደ ኢትዮጵያ የገባበትን እና የወጣበትን ቀን ጨምሮ ማንኛውም በሀገር ውስጥ የተሳለፈ የቀን ከፊል እንደ ሙሉ ቀን ይቆጠራል። እንደ ሙሉ ቀን የሚቆጠሩት፦ (1) የሕዝብ በዓላት፤ (2) የዕረፍት ቀናት የሕመም ፈቃድን ጨምሮ፤ (3) በሥራ ማቆም አድማ፣ በቀጣሪ የሥራ መዝጋት፣ በግብዓት መዘግየት፣ በአየር ሁኔታ የተቋረጡ ቀናት፤ (4) ሥራ ከመጀመሩ በፊት/ላይ/በኋላ የተሳለፈ ዕረፍት። የማይቆጠር ቀን፦ ከኢትዮጵያ ውጭ ባሉ ሁለት ቦታዎች መካከል በሚደረግ ጉዞ ምክንያት የሚደረግ Transit ቆይታ።",
+      "language": "am",
+      "topic": "tax_residence",
+      "ground_truth": {
+        "proclamation_number": "410/2017",
+        "article_numbers": ["5"],
+        "keywords": ["ነዋሪ", "183", "resident", "day count", "transit"]
+      }
+    },
+    {
+      "id": "reg410-q18-exempt-fringe-benefits",
+      "question": "ከ Fringe Benefits ውጭ የሚቆጠሩ (ነፃ የሆኑ) ጥቅሞች ምን ምን ናቸው?",
+      "expected_answer": "በደንብ 410/2017 አንቀጽ 8(4) መሠረት እንደ ዓይነት ጥቅም ተቆጥረው ግብር የማይከፈልባቸው፦ (ሀ) በአዋጁ ሰንጠረዥ 'ሠ' ከግብር ነፃ የተደረገ ጥቅም፤ (ለ) ዋጋው እጅግ አነስተኛ የሆነ ጥቅም (ትናንሽ ጥቅሞች)፤ (ሐ) በቀጣሪ ካፌቴሪያ ለሁሉም ሠራተኞች በእኩልነት የሚቀርብ የምግብና መጠጥ ድጎማ፤ (መ) ለሥራ አመራር ላልሆነ ሠራተኛ በሩቅ ሥፍራ የሚቀርብ መኖሪያ ቤት፤ (ሠ) ተንቀሳቃሽ ስልክ፤ (ረ) ቀጣሪው የሚሸፍነው የተንቀሳቃሽ ስልክ ጥሪዎች ወጪ፤ (ሰ) የትምህርት/ሥልጠና ክፍያ፤ (ሸ) የደህንነት ጥበቃ አገልግሎት፤ (ቀ) ሆቴል/ሬስቶራንት ለራሳቸው ሠራተኞች የሚያቀርቡት ምግብ፤ (በ) የደንብ ልብስና የሥራ መገልገያ ቁሶች።",
+      "language": "am",
+      "topic": "exempt_benefits",
+      "ground_truth": {
+        "proclamation_number": "410/2017",
+        "article_numbers": ["8(4)"],
+        "keywords": ["exempt", "ነፃ", "ካፌቴሪያ", "ሞባይል", "uniform", "training"]
+      }
+    }
+  ]
+}

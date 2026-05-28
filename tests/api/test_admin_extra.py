@@ -2,6 +2,8 @@
 Integration tests for admin routes not covered by test_admin_endpoints.py:
   - GET  /v1/admin/analytics
   - GET  /v1/admin/system-health
+  - GET  /v1/admin/vector-store
+  - DELETE /v1/admin/vector-store/embeddings (superadmin)
   - GET  /v1/admin/documents/{doc_id}          (detail + error cases)
   - PATCH /v1/admin/documents/{doc_id}         (superadmin only)
   - POST  /v1/admin/documents/{doc_id}/ingest-text
@@ -91,6 +93,64 @@ class TestAdminSystemHealth:
     async def test_editor_can_access_system_health(self, client, editor_session):
         resp = await client.get("/v1/admin/system-health", headers=_auth(editor_session))
         assert resp.status_code == 200
+
+
+# ---------------------------------------------------------------------------
+# Vector store
+# ---------------------------------------------------------------------------
+
+class TestAdminVectorStore:
+    async def test_unauthenticated_stats_returns_401(self, client):
+        resp = await client.get("/v1/admin/vector-store")
+        assert resp.status_code == 401
+
+    async def test_stats_returns_200(self, client, admin_session):
+        resp = await client.get("/v1/admin/vector-store", headers=_auth(admin_session))
+        assert resp.status_code == 200
+        data = resp.json()
+        for field in (
+            "configured_dimension",
+            "embedding_model",
+            "chunks_total",
+            "chunks_with_embedding",
+            "storage_bytes",
+            "dimension_mismatch",
+        ):
+            assert field in data
+
+    async def test_wipe_embeddings_requires_superadmin(self, client, editor_session):
+        resp = await client.delete(
+            "/v1/admin/vector-store/embeddings",
+            headers=_auth(editor_session),
+        )
+        assert resp.status_code == 403
+
+    async def test_wipe_embeddings_superadmin(self, client, admin_session, db_session):
+        from database.models.document import Document, DocumentChunk, DocumentStatus as DocStatusEnum
+
+        doc = Document(
+            title="vec-test",
+            status=DocStatusEnum.INDEXED,
+            source_type="upload",
+        )
+        db_session.add(doc)
+        await db_session.flush()
+        chunk = DocumentChunk(
+            document_id=doc.id,
+            chunk_index=0,
+            content="hello",
+            embedding=[0.1] * 1536,
+        )
+        db_session.add(chunk)
+        await db_session.commit()
+
+        resp = await client.delete(
+            "/v1/admin/vector-store/embeddings",
+            headers=_auth(admin_session),
+        )
+        assert resp.status_code == 200
+        assert resp.json()["action"] == "wipe_embeddings"
+        assert resp.json()["affected_rows"] >= 1
 
 
 # ---------------------------------------------------------------------------

@@ -74,11 +74,104 @@ jobs:
         run: uv sync --group dev
 
       - name: Integration tests
-        run: uv run --package api pytest tests/api/test_health.py tests/api/test_chat_endpoints.py tests/api/test_admin_endpoints.py -v
+        run: |
+          uv run --package api pytest tests/api/ \
+            --ignore=tests/api/test_schemas.py \
+            --ignore=tests/api/test_session_token.py \
+            -v
         env:
           TEST_DATABASE_URL: "postgresql+asyncpg://test:test@localhost:5432/awaqi_db_test"
           REDIS_URL: "redis://localhost:6379/0"
           SESSION_TOKEN_SECRET: "ci-test-secret"
+
+  # ─────────────────────────────────────────────
+  # Frontend unit tests (Vitest)
+  # ─────────────────────────────────────────────
+  test-web:
+    name: Frontend Unit Tests (Vitest)
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+          cache-dependency-path: apps/web/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+        working-directory: apps/web
+
+      - name: Vitest
+        run: npm test
+        working-directory: apps/web
+
+  # ─────────────────────────────────────────────
+  # E2E smoke (Playwright + PostgreSQL)
+  # ─────────────────────────────────────────────
+  test-e2e:
+    name: E2E Smoke (Playwright)
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: awaqi_db_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v4
+
+      - name: Install Python dependencies
+        run: uv sync --group dev
+
+      - name: Set up Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+          cache-dependency-path: apps/web/package-lock.json
+
+      - name: Install frontend dependencies
+        run: npm ci
+        working-directory: apps/web
+
+      - name: Install Playwright browsers
+        run: npx playwright install --with-deps chromium
+        working-directory: apps/web
+
+      - name: E2E smoke tests
+        run: npm run test:e2e
+        working-directory: apps/web
+        env:
+          CI: "true"
+          TEST_DATABASE_URL: "postgresql+asyncpg://postgres:postgres@localhost:5432/awaqi_db_test"
+          DATABASE_URL_SYNC: "postgresql://postgres:postgres@localhost:5432/awaqi_db_test"
+          REDIS_URL: "redis://localhost:6379/0"
+          SESSION_TOKEN_SECRET: "ci-test-secret"
+          BETTER_AUTH_SECRET: "ci-e2e-better-auth-secret-32chars"
 
   # ─────────────────────────────────────────────
   # Lint, type-check, and build the Next.js frontend

@@ -4,8 +4,9 @@ import { useCallback, useEffect, useMemo, useState } from "react"
 import { useRouter } from "next/navigation"
 import { useLocale } from "next-intl"
 import { ColumnDef } from "@tanstack/react-table"
-import { Eye, Globe, RefreshCw, Search, Upload } from "lucide-react"
+import { Eye, Globe, RefreshCw, Search, Upload, Filter } from "lucide-react"
 import { adminApi } from "@/lib/api"
+import { DocThumbnail } from "@/components/ui/doc-thumbnail"
 import { adminDocumentReviewPath } from "@/lib/admin-routes"
 import type { AdminDocumentItem, AdminUserItem } from "@/types/api"
 import { DataTable } from "@/components/ui/data-table"
@@ -25,6 +26,33 @@ import { authClient } from "@/lib/auth-client"
 
 type DocRow = AdminDocumentItem
 type SourceFilter = "all" | "scraped" | "uploaded"
+type StatusFilter = "all" | "indexed" | "pending" | "processing" | "failed" | "requires_manual_review"
+
+const STATUS_LABELS: Record<StatusFilter, string> = {
+    all: "All statuses",
+    indexed: "Indexed",
+    pending: "Pending",
+    processing: "Processing",
+    failed: "Failed",
+    requires_manual_review: "Needs review",
+}
+
+function inferDocKind(doc: DocRow): "pdf" | "image" | "text" | "other" {
+    const path = (doc.storage_path ?? "").toLowerCase()
+    if (path.endsWith(".pdf")) return "pdf"
+    if (path.endsWith(".png") || path.endsWith(".jpg") || path.endsWith(".jpeg") || path.endsWith(".webp")) return "image"
+    if (path.endsWith(".txt") || path.endsWith(".docx") || path.endsWith(".pptx")) return "text"
+    return "other"
+}
+
+function KindBadge({ doc }: { doc: DocRow }) {
+    const kind = inferDocKind(doc)
+    const source = doc.source_system ?? (doc.source_url ? "scraped" : "upload")
+    if (kind === "pdf") return <Badge variant="outline">PDF · {source}</Badge>
+    if (kind === "image") return <Badge variant="outline">Image · {source}</Badge>
+    if (kind === "text") return <Badge variant="outline">Text · {source}</Badge>
+    return <Badge variant="outline">Document · {source}</Badge>
+}
 
 function StatusBadge({ status, stage }: { status: string; stage?: string | null }) {
     const s = status.toLowerCase()
@@ -61,6 +89,7 @@ export default function AdminDocumentsPage() {
     const [users, setUsers] = useState<AdminUserItem[]>([])
     const [filterUploaderId, setFilterUploaderId] = useState<string>("all")
     const [sourceFilter, setSourceFilter] = useState<SourceFilter>("all")
+    const [statusFilter, setStatusFilter] = useState<StatusFilter>("all")
     const [searchQuery, setSearchQuery] = useState("")
     const [isLoading, setIsLoading] = useState(true)
     const [isRefreshing, setIsRefreshing] = useState(false)
@@ -106,6 +135,7 @@ export default function AdminDocumentsPage() {
         let docs = allDocuments
         if (sourceFilter === "scraped") docs = docs.filter((d) => !!d.source_url)
         if (sourceFilter === "uploaded") docs = docs.filter((d) => !d.source_url)
+        if (statusFilter !== "all") docs = docs.filter((d) => d.status === statusFilter)
         if (searchQuery.trim()) {
             const q = searchQuery.toLowerCase()
             docs = docs.filter(
@@ -116,13 +146,44 @@ export default function AdminDocumentsPage() {
             )
         }
         return docs
-    }, [allDocuments, sourceFilter, searchQuery])
+    }, [allDocuments, sourceFilter, statusFilter, searchQuery])
+
+    const statusCounts = useMemo(() => {
+        const counts: Record<string, number> = {}
+        for (const d of allDocuments) {
+            counts[d.status] = (counts[d.status] ?? 0) + 1
+        }
+        return counts
+    }, [allDocuments])
 
     const scrapedCount = useMemo(() => allDocuments.filter((d) => !!d.source_url).length, [allDocuments])
     const uploadedCount = useMemo(() => allDocuments.filter((d) => !d.source_url).length, [allDocuments])
 
     const columns: ColumnDef<DocRow>[] = useMemo(
         () => [
+            {
+                id: "thumbnail",
+                header: "Preview",
+                cell: ({ row }) => {
+                    const doc = row.original
+                    const kind = inferDocKind(doc)
+                    if (kind === "pdf" && doc.thumbnail_url) {
+                        return (
+                            <DocThumbnail
+                                thumbnailUrl={doc.thumbnail_url}
+                                title={doc.title}
+                                fallbackKind="text"
+                            />
+                        )
+                    }
+                    return (
+                        <DocThumbnail
+                            title={doc.title}
+                            fallbackKind={kind === "image" ? "image" : "text"}
+                        />
+                    )
+                },
+            },
             {
                 accessorKey: "title",
                 header: "Title",
@@ -133,6 +194,9 @@ export default function AdminDocumentsPage() {
                         </span>
                         <span className="font-mono text-[10px] text-muted-foreground">
                             {row.original.id.slice(0, 8)}…
+                        </span>
+                        <span className="pt-0.5">
+                            <KindBadge doc={row.original} />
                         </span>
                     </div>
                 ),
@@ -311,6 +375,24 @@ export default function AdminDocumentsPage() {
                         onChange={(e) => setSearchQuery(e.target.value)}
                         className="pl-8"
                     />
+                </div>
+                <div className="flex items-center gap-2">
+                    <Filter className="h-4 w-4 text-muted-foreground" />
+                    <Select value={statusFilter} onValueChange={(v) => setStatusFilter(v as StatusFilter)}>
+                        <SelectTrigger className="w-[170px]">
+                            <SelectValue placeholder="All statuses" />
+                        </SelectTrigger>
+                        <SelectContent>
+                            {(Object.keys(STATUS_LABELS) as StatusFilter[]).map((s) => (
+                                <SelectItem key={s} value={s}>
+                                    {STATUS_LABELS[s]}
+                                    {s !== "all" && statusCounts[s] != null
+                                        ? ` (${statusCounts[s]})`
+                                        : ""}
+                                </SelectItem>
+                            ))}
+                        </SelectContent>
+                    </Select>
                 </div>
                 {isSuperadmin && (
                     <div className="flex items-center gap-2">

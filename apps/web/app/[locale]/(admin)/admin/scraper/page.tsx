@@ -4,23 +4,33 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { useRouter } from "next/navigation"
 import { useLocale } from "next-intl"
 import { ColumnDef } from "@tanstack/react-table"
-import { Eye, Loader2, Play, RefreshCw, Save } from "lucide-react"
+import { Eye, Filter, Loader2, Play, RefreshCw, Save, Search } from "lucide-react"
 import { adminApi } from "@/lib/api"
 import { adminDocumentReviewPath } from "@/lib/admin-routes"
 import type {
     AdminDocumentItem,
-    AdminScrapeResult,
     AdminScraperConfig,
     AdminScraperRunItem,
     AdminScraperStatus,
 } from "@/types/api"
+import { JobProgress } from "@/components/ui/job-progress"
 import { DataTable } from "@/components/ui/data-table"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Switch } from "@/components/ui/switch"
+import {
+    Select,
+    SelectContent,
+    SelectItem,
+    SelectTrigger,
+    SelectValue,
+} from "@/components/ui/select"
 import { cn } from "@/lib/utils"
+
+type DocStatusFilter = "all" | "indexed" | "pending" | "processing" | "failed" | "requires_manual_review"
+type RunStatusFilter = "all" | "success" | "running" | "failed"
 
 type ScrapedDocumentRow = AdminDocumentItem
 
@@ -30,8 +40,8 @@ export default function AdminScraperPage() {
     const router = useRouter()
     const locale = useLocale()
     const [documents, setDocuments] = useState<ScrapedDocumentRow[]>([])
-    const [scrapeResult, setScrapeResult] = useState<AdminScrapeResult | null>(null)
     const [scraperStatus, setScraperStatus] = useState<AdminScraperStatus | null>(null)
+    const [scrapeJobId, setScrapeJobId] = useState<string | null>(null)
     const [runHistory, setRunHistory] = useState<AdminScraperRunItem[]>([])
     const [config, setConfig] = useState<AdminScraperConfig | null>(null)
     const [seedUrlsText, setSeedUrlsText] = useState("")
@@ -48,6 +58,9 @@ export default function AdminScraperPage() {
     const [isSavingConfig, setIsSavingConfig] = useState(false)
     const [error, setError] = useState<string | null>(null)
     const shellRef = useRef<HTMLDivElement | null>(null)
+    const [docStatusFilter, setDocStatusFilter] = useState<DocStatusFilter>("all")
+    const [docSearch, setDocSearch] = useState("")
+    const [runStatusFilter, setRunStatusFilter] = useState<RunStatusFilter>("all")
 
     const appendShellLine = useCallback((line: string) => {
         const timestamp = new Date().toLocaleTimeString()
@@ -118,28 +131,25 @@ export default function AdminScraperPage() {
         setIsScraping(true)
         setError(null)
         appendShellLine("$ POST /v1/admin/scrape")
-        appendShellLine("[info] Starting scrape cycle...")
-        let heartbeat = 0
-        const liveTicker = setInterval(() => {
-            heartbeat = (heartbeat + 1) % 3
-            appendShellLine(`[live] scraping${".".repeat(heartbeat + 1)}`)
-        }, 1200)
+        appendShellLine("[info] Enqueuing scrape job...")
         try {
             const result = await adminApi.triggerScrape()
-            setScrapeResult(result)
-            appendShellLine("[ok] Scrape completed.")
-            STAT_KEYS.forEach((key) => {
-                appendShellLine(`[stat] ${key}=${result.stats[key]}`)
-            })
-            await Promise.all([refreshDocuments(), loadScraperMeta()])
+            setScrapeJobId(result.job_id)
+            appendShellLine(`[ok] Job enqueued: ${result.job_id.slice(0, 8)}…`)
+            appendShellLine("[live] Watching progress via Redis SSE…")
         } catch (err: unknown) {
             const message = err instanceof Error ? err.message : "Failed to trigger scraper"
             setError(message)
             appendShellLine(`[error] ${message}`)
-        } finally {
-            clearInterval(liveTicker)
             setIsScraping(false)
         }
+    }
+
+    const handleScrapeJobDone = async (finalStatus: "done" | "failed") => {
+        appendShellLine(`[${finalStatus}] Scrape job finished.`)
+        setIsScraping(false)
+        setScrapeJobId(null)
+        await Promise.all([refreshDocuments(), loadScraperMeta()])
     }
 
     const handleSaveConfig = async () => {
@@ -282,7 +292,26 @@ export default function AdminScraperPage() {
         []
     )
 
-    const displayStats = scrapeResult?.stats ?? scraperStatus?.last_run?.stats
+    const filteredDocuments = useMemo(() => {
+        let docs = documents
+        if (docStatusFilter !== "all") docs = docs.filter((d) => d.status === docStatusFilter)
+        if (docSearch.trim()) {
+            const q = docSearch.toLowerCase()
+            docs = docs.filter(
+                (d) =>
+                    d.title.toLowerCase().includes(q) ||
+                    (d.source_url ?? "").toLowerCase().includes(q)
+            )
+        }
+        return docs
+    }, [documents, docStatusFilter, docSearch])
+
+    const filteredRuns = useMemo(() => {
+        if (runStatusFilter === "all") return runHistory
+        return runHistory.filter((r) => r.status === runStatusFilter)
+    }, [runHistory, runStatusFilter])
+
+    const displayStats = scraperStatus?.last_run?.stats
 
     return (
         <div className="space-y-6">
@@ -438,6 +467,16 @@ export default function AdminScraperPage() {
                                 <p className="mt-1 animate-pulse text-emerald-400">▋ running...</p>
                             ) : null}
                         </div>
+                        {scrapeJobId && (
+                            <div className="mt-3 rounded-md border border-zinc-700 bg-zinc-900 p-3">
+                                <JobProgress
+                                    jobId={scrapeJobId}
+                                    label="MoR scraping…"
+                                    onDone={handleScrapeJobDone}
+                                    className="text-zinc-100 [&_.text-muted-foreground]:text-zinc-400"
+                                />
+                            </div>
+                        )}
                     </div>
                 </CardContent>
             </Card>
@@ -460,12 +499,44 @@ export default function AdminScraperPage() {
                     {isLoading ? (
                         <p className="text-sm text-muted-foreground">Loading scraped documents…</p>
                     ) : (
-                        <DataTable
-                            columns={columns}
-                            data={documents}
-                            initialPageSize={10}
-                            pageSizeOptions={[10, 50, 100]}
-                        />
+                        <>
+                            <div className="mb-4 flex flex-wrap items-center gap-3">
+                                <div className="relative flex-1 min-w-[180px] max-w-xs">
+                                    <Search className="absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                                    <Input
+                                        placeholder="Search by title or URL…"
+                                        value={docSearch}
+                                        onChange={(e) => setDocSearch(e.target.value)}
+                                        className="pl-8 h-8 text-sm"
+                                    />
+                                </div>
+                                <div className="flex items-center gap-2">
+                                    <Filter className="h-4 w-4 text-muted-foreground" />
+                                    <Select value={docStatusFilter} onValueChange={(v) => setDocStatusFilter(v as DocStatusFilter)}>
+                                        <SelectTrigger className="w-[160px] h-8 text-sm">
+                                            <SelectValue placeholder="All statuses" />
+                                        </SelectTrigger>
+                                        <SelectContent>
+                                            <SelectItem value="all">All statuses</SelectItem>
+                                            <SelectItem value="indexed">Indexed</SelectItem>
+                                            <SelectItem value="pending">Pending</SelectItem>
+                                            <SelectItem value="processing">Processing</SelectItem>
+                                            <SelectItem value="failed">Failed</SelectItem>
+                                            <SelectItem value="requires_manual_review">Needs review</SelectItem>
+                                        </SelectContent>
+                                    </Select>
+                                </div>
+                                <span className="text-xs text-muted-foreground">
+                                    {filteredDocuments.length} of {documents.length}
+                                </span>
+                            </div>
+                            <DataTable
+                                columns={columns}
+                                data={filteredDocuments}
+                                initialPageSize={10}
+                                pageSizeOptions={[10, 50, 100]}
+                            />
+                        </>
                     )}
                 </CardContent>
             </Card>
@@ -494,7 +565,24 @@ export default function AdminScraperPage() {
                     <CardDescription>Manual and scheduled scrape runs</CardDescription>
                 </CardHeader>
                 <CardContent>
-                    <DataTable columns={runColumns} data={runHistory} initialPageSize={10} />
+                    <div className="mb-4 flex items-center gap-3">
+                        <Filter className="h-4 w-4 text-muted-foreground" />
+                        <Select value={runStatusFilter} onValueChange={(v) => setRunStatusFilter(v as RunStatusFilter)}>
+                            <SelectTrigger className="w-[140px] h-8 text-sm">
+                                <SelectValue placeholder="All statuses" />
+                            </SelectTrigger>
+                            <SelectContent>
+                                <SelectItem value="all">All runs</SelectItem>
+                                <SelectItem value="success">Success</SelectItem>
+                                <SelectItem value="running">Running</SelectItem>
+                                <SelectItem value="failed">Failed</SelectItem>
+                            </SelectContent>
+                        </Select>
+                        <span className="text-xs text-muted-foreground">
+                            {filteredRuns.length} of {runHistory.length}
+                        </span>
+                    </div>
+                    <DataTable columns={runColumns} data={filteredRuns} initialPageSize={10} />
                 </CardContent>
             </Card>
 

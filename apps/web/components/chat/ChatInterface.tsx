@@ -6,6 +6,7 @@ import { useSearchParams } from 'next/navigation';
 import { MessageList } from './MessageList';
 import { ChatInput } from './ChatInput';
 import { Message, Attachment } from './types';
+import type { AssistantMode } from '@/types/api';
 import { chatApi } from '@/lib/api';
 import { customerAuthClient } from '@/lib/customer-auth-client';
 import {
@@ -24,6 +25,18 @@ export function ChatInterface() {
     const [isLoading, setIsLoading] = useState(false);
     const [isLoggedIn, setIsLoggedIn] = useState<boolean | null>(null);
     const [migrated, setMigrated] = useState(false);
+    const [mode, setMode] = useState<AssistantMode>(() => {
+        if (typeof window === 'undefined') return 'basic';
+        const saved = window.localStorage.getItem('awaqi:assistantMode');
+        return saved === 'awaqi_max' ? 'awaqi_max' : 'basic';
+    });
+
+    const handleModeChange = useCallback((next: AssistantMode) => {
+        setMode(next);
+        if (typeof window !== 'undefined') {
+            window.localStorage.setItem('awaqi:assistantMode', next);
+        }
+    }, []);
     const sessionIdRef = useRef<string>('');
     const hasSavedTitleRef = useRef(false);
 
@@ -106,6 +119,7 @@ export function ChatInterface() {
                 message: content,
                 session_id: sessionIdRef.current,
                 language: document.documentElement.lang ?? 'en',
+                mode,
             }, token);
 
             if (response.session_token) {
@@ -198,7 +212,12 @@ export function ChatInterface() {
                     onFollowUpClick={handleFollowUpClick}
                 />
                 <div className="p-4 pb-6 w-full">
-                    <ChatInput onSend={handleSendMessage} disabled={isLoading} />
+                    <ChatInput
+                        onSend={handleSendMessage}
+                        disabled={isLoading}
+                        mode={mode}
+                        onModeChange={handleModeChange}
+                    />
                 </div>
             </div>
         </div>
