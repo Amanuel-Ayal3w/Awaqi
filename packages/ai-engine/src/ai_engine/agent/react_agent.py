@@ -19,11 +19,12 @@ Output to the caller:
 
 from __future__ import annotations
 
-import json
+import asyncio
 import logging
 import os
+import threading
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, AsyncIterator
 
 from database.models.document import DocumentChunk
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -81,7 +82,11 @@ SYSTEM_INSTRUCTIONS = (
     "     insufficient, say so explicitly — do not speculate.\n"
     "   - Add inline citation markers like [1] [2] matching the order in "
     "     which the supporting KB excerpts appeared in your observations.\n"
-    "   - Keep it concise and direct.\n"
+    "   - Be comprehensive: cover obligations, deadlines, rates, exemptions, "
+    "     and penalties where the evidence contains them.\n"
+    "   - Use Markdown: **bold** for key terms, tables for comparisons, "
+    "     bullet/numbered lists for steps. End with a short Summary section.\n"
+    "   - Do NOT truncate or cut off mid-sentence. Always complete your answer fully.\n"
 )
 
 
@@ -159,11 +164,12 @@ async def run_awaqi_max(
     from google import genai
     from google.genai import types
 
-    model_id = os.getenv("GEMINI_CHAT_MODEL", "gemini-2.0-flash")
+    model_id = os.getenv("GEMINI_CHAT_MODEL", "gemini-3.5-flash")
     client = genai.Client(api_key=api_key)
     config = types.GenerateContentConfig(
         system_instruction=SYSTEM_INSTRUCTIONS,
         tools=[types.Tool(function_declarations=gemini_function_declarations())],
+        max_output_tokens=8192,
     )
 
     contents: list[Any] = [
@@ -298,6 +304,233 @@ async def run_awaqi_max(
     )
 
 
+async def run_awaqi_max_stream(
+    db: AsyncSession,
+    user_query: str,
+    *,
+    language: str,
+    taxpayer_category: str | None,
+    retrieval_mode: str = "optimized",
+) -> AsyncIterator[str | AgentResult]:
+    """
+    Streaming version of run_awaqi_max.
+
+    Yields:
+    - ``("status", message)`` tuples during tool-call steps
+    - ``str`` text deltas during the final Gemini generation
+    - A single ``AgentResult`` at the very end (use isinstance check)
+    """
+    api_key = os.getenv("GOOGLE_API_KEY", "").strip()
+    if not api_key:
+        msg = (
+            "Awaqi Max is unavailable (GOOGLE_API_KEY is not configured). "
+            "Falling back to basic mode is recommended."
+        )
+        yield msg
+        yield AgentResult(answer=msg, citations=[], confidence=0.0)
+        return
+
+    from google import genai
+    from google.genai import types
+
+    model_id = os.getenv("GEMINI_CHAT_MODEL", "gemini-3.5-flash")
+    client = genai.Client(api_key=api_key)
+
+    # Tool-call config (no streaming — tool calls need complete responses)
+    tool_config = types.GenerateContentConfig(
+        system_instruction=SYSTEM_INSTRUCTIONS,
+        tools=[types.Tool(function_declarations=gemini_function_declarations())],
+        max_output_tokens=8192,
+    )
+
+    contents: list[Any] = [
+        types.Content(
+            role="user",
+            parts=[types.Part.from_text(text=_build_user_prompt(user_query, language))],
+        ),
+    ]
+
+    trace: list[AgentTrace] = []
+    all_chunks: dict[str, DocumentChunk] = {}
+    web_citations: list[dict] = []
+
+    for step in range(1, MAX_ITERATIONS + 1):
+        try:
+            response = await _generate_async(client, model_id, contents, tool_config)
+        except Exception as exc:
+            logger.exception("awaqi_max_stream_gemini_error step=%d", step)
+            trace.append(AgentTrace(step=step, type="error", text=str(exc)))
+            err_msg = "The agent encountered an error. Please retry or use basic mode."
+            yield err_msg
+            yield AgentResult(answer=err_msg, citations=[], confidence=0.0, trace=trace)
+            return
+
+        call = _extract_function_call(response)
+        if call is None:
+            # We have the final answer — re-generate it with streaming
+            merged_chunks = list(all_chunks.values())
+            citations = chunks_to_citations(merged_chunks)
+            for wc in web_citations:
+                citations.append({
+                    "source": (wc.get("title") or wc.get("uri") or "Web")[:512],
+                    "page": 0,
+                    "text": wc.get("uri") or "",
+                    "document_title": wc.get("title"),
+                    "proclamation_number": None,
+                    "article_number": None,
+                })
+
+            # Stream the final answer from Gemini
+            # Build a final-answer config without tools (pure text generation)
+            final_config = types.GenerateContentConfig(
+                system_instruction=SYSTEM_INSTRUCTIONS,
+                max_output_tokens=8192,
+                temperature=0.3,
+            )
+
+            queue: asyncio.Queue[str | None] = asyncio.Queue(maxsize=256)
+            loop = asyncio.get_running_loop()
+
+            # Add a generation-only user turn asking to finalize
+            final_contents = list(contents)
+            final_contents.append(
+                types.Content(
+                    role="user",
+                    parts=[types.Part.from_text(
+                        text="Now write the complete final answer based on what you found."
+                    )],
+                )
+            )
+
+            def _stream_final() -> None:
+                try:
+                    for chunk in client.models.generate_content_stream(
+                        model=model_id,
+                        contents=final_contents,
+                        config=final_config,
+                    ):
+                        text = getattr(chunk, "text", None) or ""
+                        if text:
+                            asyncio.run_coroutine_threadsafe(
+                                queue.put(text), loop
+                            ).result()
+                except Exception as exc:
+                    logger.warning("awaqi_max_stream_final_error exc=%s", exc)
+                    # Fall back to the non-streamed text from the earlier response
+                    fallback = _extract_text(response)
+                    if fallback:
+                        asyncio.run_coroutine_threadsafe(
+                            queue.put(fallback), loop
+                        ).result()
+                finally:
+                    asyncio.run_coroutine_threadsafe(queue.put(None), loop).result()
+
+            t = threading.Thread(target=_stream_final, daemon=True)
+            t.start()
+
+            full_parts: list[str] = []
+            while True:
+                item = await queue.get()
+                if item is None:
+                    break
+                full_parts.append(item)
+                yield item
+
+            final_text = "".join(full_parts).strip() or (
+                _extract_text(response) or
+                "I could not produce a grounded answer. Try rephrasing your question."
+            )
+
+            trace.append(AgentTrace(step=step, type="final_answer", text=final_text))
+            yield AgentResult(
+                answer=final_text,
+                citations=citations,
+                confidence=estimate_confidence(merged_chunks),
+                chunks=merged_chunks,
+                trace=trace,
+                web_citations=web_citations,
+            )
+            return
+
+        tool_name, tool_args = call
+        contents.append(_first_candidate_content(response))
+
+        if tool_name == "rag_search":
+            query = str(tool_args.get("query", "")).strip() or user_query
+            yield ("status", f"Searching knowledge base: {query[:80]}")
+            obs, chunks = await rag_search_tool(
+                db, query,
+                taxpayer_category=taxpayer_category,
+                retrieval_mode=retrieval_mode,
+                top_k=RAG_TOP_K,
+            )
+            for ch in chunks:
+                all_chunks.setdefault(str(ch.id), ch)
+            trace.append(AgentTrace(
+                step=step, type="tool_call", tool_name=tool_name,
+                tool_args={"query": query}, observation=obs.to_agent_dict(),
+            ))
+            contents.append(types.Content(
+                role="tool",
+                parts=[_format_function_response("rag_search", obs.to_agent_dict())],
+            ))
+            continue
+
+        if tool_name == "ethiopian_web_search":
+            query = str(tool_args.get("query", "")).strip() or user_query
+            yield ("status", f"Searching Ethiopian sources: {query[:80]}")
+            web_obs = await ethiopian_web_search_tool(query)
+            for cite in web_obs.citations:
+                web_citations.append(cite)
+            trace.append(AgentTrace(
+                step=step, type="tool_call", tool_name=tool_name,
+                tool_args={"query": query}, observation=web_obs.to_agent_dict(),
+            ))
+            contents.append(types.Content(
+                role="tool",
+                parts=[_format_function_response("ethiopian_web_search", web_obs.to_agent_dict())],
+            ))
+            continue
+
+        logger.warning("awaqi_max_stream_unknown_tool name=%r", tool_name)
+        break
+
+    # Hit max iterations — synthesise with streaming from rag_answer
+    logger.info("awaqi_max_stream_max_iterations chunks=%d", len(all_chunks))
+    merged_chunks = list(all_chunks.values())
+
+    from ai_engine.rag_answer import answer_from_chunks_stream
+
+    full_text = ""
+    citations_out: list[dict] = []
+    conf_out = 0.0
+    async for item in answer_from_chunks_stream(user_query, merged_chunks, language=language):
+        if isinstance(item, str):
+            yield item
+        else:
+            full_text, citations_out, conf_out, _ = item
+
+    for wc in web_citations:
+        citations_out.append({
+            "source": (wc.get("title") or wc.get("uri") or "Web")[:512],
+            "page": 0,
+            "text": wc.get("uri") or "",
+            "document_title": wc.get("title"),
+            "proclamation_number": None,
+            "article_number": None,
+        })
+
+    trace.append(AgentTrace(step=MAX_ITERATIONS + 1, type="final_answer", text=full_text))
+    yield AgentResult(
+        answer=full_text,
+        citations=citations_out,
+        confidence=conf_out,
+        chunks=merged_chunks,
+        trace=trace,
+        web_citations=web_citations,
+    )
+
+
 def _first_candidate_content(response):
     for cand in response.candidates or []:
         if getattr(cand, "content", None):
@@ -340,4 +573,10 @@ def trace_to_json(trace: list[AgentTrace]) -> list[dict]:
 
 
 # Re-export so callers can do ``from ai_engine.agent.react_agent import ...``
-__all__ = ["AgentResult", "AgentTrace", "run_awaqi_max", "trace_to_json"]
+__all__ = [
+    "AgentResult",
+    "AgentTrace",
+    "run_awaqi_max",
+    "run_awaqi_max_stream",
+    "trace_to_json",
+]

@@ -19,6 +19,7 @@ def run_mor_scrape_job(
     trigger: str = "manual",
     seed_urls: list[str] | None = None,
     max_links: int | None = None,
+    sources: list[str] | None = None,
 ) -> dict[str, int]:
     """RQ job function: run one MoR scrape cycle with progress updates."""
 
@@ -42,6 +43,7 @@ def run_mor_scrape_job(
             seed_urls=seed_urls,
             max_links=max_links,
             on_progress=_progress_cb,
+            sources=sources,
         )
 
     try:

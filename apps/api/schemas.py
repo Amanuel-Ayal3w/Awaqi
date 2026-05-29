@@ -23,6 +23,8 @@ class Citation(BaseModel):
     document_title: Optional[str] = None
     proclamation_number: Optional[str] = None
     article_number: Optional[str] = None
+    enforcement_status: str = "in_effect"
+    source_url: Optional[str] = None
 
 
 class ChatResponse(BaseModel):
@@ -143,6 +145,12 @@ class AdminDocumentList(BaseModel):
     total: int
 
 
+class AdminDocumentDeleteResult(BaseModel):
+    status: str
+    deleted_doc_id: str
+    deleted_chunks: int = 0
+
+
 class AdminUserPatch(BaseModel):
     role: Optional[str] = None
     is_active: Optional[bool] = None
@@ -256,6 +264,11 @@ class AdminScraperStatus(BaseModel):
     timezone: str
     next_run_time: Optional[str] = None
     last_run: Optional[AdminScraperRunItem] = None
+
+
+class AdminScrapeTriggerRequest(BaseModel):
+    """Optional source-selection payload for POST /admin/scrape."""
+    sources: Optional[List[str]] = None
 
 
 class AdminTelegramScrapeStats(BaseModel):

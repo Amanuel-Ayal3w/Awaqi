@@ -173,11 +173,6 @@ class DocumentChunk(Base):
 
     __table_args__ = (
         Index(
-            "ix_document_chunks_embedding_hnsw",
-            "embedding",
-            postgresql_using="hnsw",
-        ),
-        Index(
             "ix_document_chunks_content_trgm",
             "content",
             postgresql_using="gin",

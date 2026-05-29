@@ -1,7 +1,7 @@
 """
 PDF text extraction using Gemini 2.0 Flash.
 
-Sends PDF pages to gemini-2.0-flash to extract text, handling both
+Sends PDF pages to gemini-3.5-flash to extract text, handling both
 digitally-born PDFs and scanned/OCR documents natively.
 """
 
@@ -87,7 +87,7 @@ async def _extract_single_page(
 ) -> str:
     """Send a single PDF page to Gemini Flash for text extraction."""
     response = await client.aio.models.generate_content(
-        model="gemini-2.0-flash",
+        model="gemini-3.5-flash",
         contents=[
             types.Content(
                 parts=[

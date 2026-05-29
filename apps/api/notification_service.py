@@ -187,7 +187,7 @@ async def _assess_relevance_with_llm(
         import google.generativeai as genai  # type: ignore[import-untyped]
 
         genai.configure(api_key=api_key)
-        model_name = os.getenv("GEMINI_CHAT_MODEL", "gemini-2.0-flash")
+        model_name = os.getenv("GEMINI_CHAT_MODEL", "gemini-3.5-flash")
         model = genai.GenerativeModel(model_name)
         response = model.generate_content(
             prompt,

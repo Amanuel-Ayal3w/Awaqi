@@ -24,6 +24,8 @@ export interface Citation {
     document_title?: string | null;
     proclamation_number?: string | null;
     article_number?: string | null;
+    enforcement_status?: string;
+    source_url?: string | null;
 }
 
 export interface AgentTraceStep {
@@ -168,6 +170,12 @@ export interface AdminDocumentList {
     total: number;
 }
 
+export interface AdminDocumentDeleteResult {
+    status: string;
+    deleted_doc_id: string;
+    deleted_chunks: number;
+}
+
 export interface AdminScrapeStats {
     discovered: number;
     inserted: number;
@@ -222,6 +230,8 @@ export interface AdminScraperStatus {
     next_run_time?: string | null;
     last_run?: AdminScraperRunItem | null;
 }
+
+export type ScrapeSource = "mor_laws" | "ethiodata_tax" | "mor_news";
 
 export interface AdminTelegramScrapeStats {
     messages_seen: number;

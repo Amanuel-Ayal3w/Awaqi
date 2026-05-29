@@ -17,6 +17,7 @@ Retrieval modes:
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import time
@@ -24,7 +25,7 @@ import uuid
 from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Literal
+from typing import Callable, Literal
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -156,7 +157,7 @@ async def _load_chunk_doc_metadata(
     return chunks, docs
 
 
-def _semantic_similarity(expected: str, actual: str) -> float:
+def _semantic_similarity_sync(expected: str, actual: str) -> float:
     if not expected.strip() or not actual.strip():
         return 0.0
     try:
@@ -178,6 +179,10 @@ async def evaluate_item(
     use_judge: bool,
     use_semantic_sim: bool,
 ) -> PerItemResult:
+    import functools
+
+    from ai_engine.evaluation.judge import JudgeScore
+
     start = time.perf_counter()
     agent_tool_calls = 0
     agent_used_web_search = False
@@ -240,21 +245,30 @@ async def evaluate_item(
     rr = mrr(relevant_mask)
     nd = ndcg_at_k(relevant_mask, k)
 
-    sem_sim = 0.0
-    if use_semantic_sim:
-        sem_sim = _semantic_similarity(item.expected_answer, answer_text)
-
-    if use_judge:
+    # Run judge and semantic-similarity concurrently — both are blocking LLM/embed
+    # calls; wrapping in asyncio.to_thread lets them overlap with each other.
+    async def _run_judge() -> JudgeScore:
+        if not use_judge:
+            return JudgeScore(0, 0, 0, 0, 0, "judge disabled")
         passages = [(ch.content or "")[:1200] for ch in chunks[:6]]
-        judge = judge_answer(
-            question=item.question,
-            expected_answer=item.expected_answer,
-            actual_answer=answer_text,
-            context_passages=passages,
+        return await asyncio.to_thread(
+            functools.partial(
+                judge_answer,
+                question=item.question,
+                expected_answer=item.expected_answer,
+                actual_answer=answer_text,
+                context_passages=passages,
+            )
         )
-    else:
-        from ai_engine.evaluation.judge import JudgeScore
-        judge = JudgeScore(0, 0, 0, 0, 0, "judge disabled")
+
+    async def _run_sem_sim() -> float:
+        if not use_semantic_sim:
+            return 0.0
+        return await asyncio.to_thread(
+            _semantic_similarity_sync, item.expected_answer, answer_text
+        )
+
+    judge, sem_sim = await asyncio.gather(_run_judge(), _run_sem_sim())
 
     return PerItemResult(
         item_id=item.id,
@@ -349,28 +363,62 @@ async def run_evaluation(
     use_judge: bool = True,
     use_semantic_sim: bool = True,
     run_id: str | None = None,
+    progress_callback: Callable[[int, int, BenchmarkItem], None] | None = None,
+    concurrency: int = 5,
 ) -> tuple[RunSummary, list[PerItemResult]]:
+    """
+    Evaluate all benchmark items.
+
+    Items are dispatched concurrently up to ``concurrency`` at a time.  Each
+    item gets its own DB session so sessions are never shared across coroutines.
+    The ``db`` parameter is kept for backwards-compatibility but is not used for
+    the per-item work; callers may pass ``None`` when calling with concurrency.
+    """
+    from database import AsyncSessionLocal  # local import avoids circular dep
+
     timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S")
     run_id = run_id or f"{assistant_mode}-{mode}-{timestamp}"
     started_at = datetime.now(timezone.utc).isoformat()
-    results: list[PerItemResult] = []
-    for i, item in enumerate(items, start=1):
-        logger.info(
-            "eval_progress %d/%d id=%s mode=%s asst=%s",
-            i, len(items), item.id, mode, assistant_mode,
-        )
-        try:
-            result = await evaluate_item(
-                db, item,
-                mode=mode,
-                assistant_mode=assistant_mode,
-                k=k,
-                use_judge=use_judge,
-                use_semantic_sim=use_semantic_sim,
-            )
-        except Exception:
-            logger.exception("eval_item_failed id=%s", item.id)
-            continue
-        results.append(result)
+
+    sem = asyncio.Semaphore(concurrency)
+    # Mutable counter is safe here — asyncio is single-threaded.
+    completed_count = [0]
+    total = len(items)
+
+    async def _run_item(item: BenchmarkItem) -> PerItemResult | None:
+        async with sem:
+            async with AsyncSessionLocal() as item_db:
+                try:
+                    result = await evaluate_item(
+                        item_db, item,
+                        mode=mode,
+                        assistant_mode=assistant_mode,
+                        k=k,
+                        use_judge=use_judge,
+                        use_semantic_sim=use_semantic_sim,
+                    )
+                except Exception:
+                    logger.exception("eval_item_failed id=%s", item.id)
+                    result = None
+                completed_count[0] += 1
+                logger.info(
+                    "eval_progress %d/%d id=%s mode=%s asst=%s",
+                    completed_count[0], total, item.id, mode, assistant_mode,
+                )
+                if progress_callback is not None:
+                    progress_callback(completed_count[0], total, item)
+                return result
+
+    raw: list[PerItemResult | None] = await asyncio.gather(
+        *[_run_item(item) for item in items]
+    )
+
+    # Filter failures and restore original item order.
+    order = {item.id: i for i, item in enumerate(items)}
+    results = sorted(
+        (r for r in raw if r is not None),
+        key=lambda r: order.get(r.item_id, 999),
+    )
+
     summary = summarise(run_id, mode, assistant_mode, k, started_at, results)
     return summary, results

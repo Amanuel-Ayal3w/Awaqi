@@ -1,14 +1,20 @@
 import hashlib
 import hmac
+import json
 import logging
 import os
 import uuid
 from typing import List
 
-from ai_engine.agent.react_agent import run_awaqi_max, trace_to_json
+from ai_engine.agent.react_agent import (
+    AgentResult,
+    run_awaqi_max,
+    run_awaqi_max_stream,
+    trace_to_json,
+)
 from ai_engine.hybrid_retrieval import load_chunks_by_ids, retrieve_fused_chunk_ids
 from ai_engine.query_nlu import detect_query_language
-from ai_engine.rag_answer import answer_from_chunks
+from ai_engine.rag_answer import answer_from_chunks, answer_from_chunks_stream
 from ai_engine.safety import should_refuse_query
 from database import get_session
 from database.models.customer import CuUser
@@ -21,6 +27,7 @@ from database.models.session import (
     MessageRole,
 )
 from fastapi import APIRouter, Depends, Header, HTTPException, Response, status
+from fastapi.responses import StreamingResponse
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -283,6 +290,205 @@ async def send_message(
     )
 
 
+def _sse(payload: dict) -> str:
+    return f"data: {json.dumps(payload, ensure_ascii=False)}\n\n"
+
+
+@router.post("/stream")
+async def stream_message(
+    request: ChatRequest,
+    session_token: str | None = Header(None, alias="X-Session-Token"),
+    x_channel: str | None = Header(None, alias="X-Channel"),
+    x_telegram_chat_id: str | None = Header(None, alias="X-Telegram-Chat-Id"),
+    db: AsyncSession = Depends(get_session),
+    _rl: None = Depends(require_rate_limit),
+):
+    """
+    SSE streaming endpoint. Emits events:
+      {"type": "status",  "text": "..."}          — tool-call progress (max mode)
+      {"type": "delta",   "text": "..."}          — text chunk
+      {"type": "done",    "response_text": "...", "citations": [...],
+                          "confidence_score": 0.8, "session_token": "...",
+                          "detected_language": "am", "follow_up_suggestions": [...],
+                          "mode": "basic"}        — final event
+      {"type": "error",   "detail": "..."}        — on failure
+    """
+    channel = Channel.TELEGRAM if x_channel == "telegram" else Channel.WEB
+
+    cu_user_id: uuid.UUID | None = None
+    if x_telegram_chat_id:
+        try:
+            cu_user_id = await _resolve_telegram_customer(int(x_telegram_chat_id), db)
+        except (ValueError, TypeError):
+            pass
+
+    chat_session = await _get_or_create_session(
+        request.session_id,
+        request.language or "en",
+        session_token,
+        db,
+        channel=channel,
+        cu_user_id=cu_user_id,
+    )
+
+    user_msg = Message(
+        session_id=chat_session.id,
+        role=MessageRole.USER,
+        content=request.message,
+    )
+    db.add(user_msg)
+    await db.flush()
+
+    lang = detect_query_language(request.message)
+    session_tok = _build_guest_session_token(chat_session.id)
+
+    refuse, refusal_msg = should_refuse_query(request.message)
+    if refuse and refusal_msg:
+        assistant_msg = Message(
+            session_id=chat_session.id,
+            role=MessageRole.ASSISTANT,
+            content=refusal_msg,
+            cited_chunks=[],
+            confidence_score=0.0,
+        )
+        db.add(assistant_msg)
+
+        async def _refuse_gen():
+            yield _sse({"type": "delta", "text": refusal_msg})
+            yield _sse({
+                "type": "done",
+                "response_text": refusal_msg,
+                "citations": [],
+                "confidence_score": 0.0,
+                "session_token": session_tok,
+                "detected_language": lang,
+                "follow_up_suggestions": [],
+                "mode": request.mode,
+            })
+
+        return StreamingResponse(_refuse_gen(), media_type="text/event-stream")
+
+    # Capture mutable state from the async generator
+    state: dict = {}
+
+    async def _generate():
+        try:
+            if request.mode == "awaqi_max":
+                async for item in run_awaqi_max_stream(
+                    db,
+                    request.message,
+                    language=request.language or "en",
+                    taxpayer_category=request.taxpayer_category,
+                    retrieval_mode="optimized",
+                ):
+                    if isinstance(item, AgentResult):
+                        state["result"] = item
+                    elif isinstance(item, tuple) and item[0] == "status":
+                        yield _sse({"type": "status", "text": item[1]})
+                    elif isinstance(item, str):
+                        yield _sse({"type": "delta", "text": item})
+            else:
+                fused_ids = await retrieve_fused_chunk_ids(
+                    db,
+                    request.message,
+                    taxpayer_category=request.taxpayer_category,
+                )
+                chunks = await load_chunks_by_ids(db, fused_ids)
+
+                async for item in answer_from_chunks_stream(
+                    request.message,
+                    chunks,
+                    language=request.language or "en",
+                ):
+                    if isinstance(item, str):
+                        yield _sse({"type": "delta", "text": item})
+                    else:
+                        full_text, citation_dicts, confidence_score, follow_ups = item
+                        from apps.api.schemas import Citation as CitationSchema
+                        citations = [
+                            CitationSchema(**c).model_dump()
+                            for c in citation_dicts
+                        ]
+                        state["basic_result"] = (
+                            full_text, citations, confidence_score, follow_ups
+                        )
+
+        except Exception as exc:
+            logger.exception(
+                "stream_pipeline_error session_id=%s exception=%s",
+                chat_session.id,
+                repr(exc),
+            )
+            yield _sse({"type": "error", "detail": "Generation failed. Please retry."})
+            return
+
+        # Finalise: persist assistant message and emit done event
+        try:
+            if request.mode == "awaqi_max" and "result" in state:
+                agent_result: AgentResult = state["result"]
+                response_text = agent_result.answer
+                citation_dicts = agent_result.citations
+                confidence_score = agent_result.confidence
+                follow_ups = []
+                from apps.api.schemas import Citation as CitationSchema
+                citations_ser = [
+                    CitationSchema(**c).model_dump()
+                    for c in citation_dicts
+                ]
+                agent_trace = trace_to_json(agent_result.trace)
+                web_citations = agent_result.web_citations or None
+            elif "basic_result" in state:
+                response_text, citations_ser, confidence_score, follow_ups = state["basic_result"]
+                agent_trace = None
+                web_citations = None
+            else:
+                response_text = ""
+                citations_ser = []
+                confidence_score = 0.0
+                follow_ups = []
+                agent_trace = None
+                web_citations = None
+
+            assistant_msg = Message(
+                session_id=chat_session.id,
+                role=MessageRole.ASSISTANT,
+                content=response_text,
+                cited_chunks=citations_ser,
+                confidence_score=confidence_score,
+            )
+            db.add(assistant_msg)
+
+            done_payload: dict = {
+                "type": "done",
+                "response_text": response_text,
+                "citations": citations_ser,
+                "confidence_score": confidence_score,
+                "session_token": session_tok,
+                "detected_language": lang,
+                "follow_up_suggestions": follow_ups,
+                "mode": request.mode,
+            }
+            if agent_trace is not None:
+                done_payload["agent_trace"] = agent_trace
+            if web_citations is not None:
+                done_payload["web_citations"] = web_citations
+
+            yield _sse(done_payload)
+
+        except Exception:
+            logger.exception("stream_persist_error session_id=%s", chat_session.id)
+            yield _sse({"type": "error", "detail": "Failed to persist response."})
+
+    return StreamingResponse(
+        _generate(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "X-Accel-Buffering": "no",
+        },
+    )
+
+
 @router.get("/history/{session_id}", response_model=List[ChatMessage])
 async def get_history(
     session_id: str,
@@ -434,12 +640,8 @@ async def list_sessions(
     _rl: None = Depends(require_rate_limit),
 ):
     """Return all sessions for the authenticated customer user (AWA-35)."""
-    from database.models.customer import CuUser
-    from apps.api.deps import get_cu_user
 
     # Inline session resolution — reuse the apiClient bearer token
-    from fastapi import Request
-    from starlette.requests import Request as StarletteRequest
 
     # We need to resolve the logged-in customer from the Authorization header.
     # Delegating to a shared helper keeps the implementation thin.

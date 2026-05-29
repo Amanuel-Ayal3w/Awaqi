@@ -16,7 +16,7 @@ down_revision: str | None = None
 branch_labels: str | tuple[str, ...] | None = None
 depends_on: str | tuple[str, ...] | None = None
 
-EMBEDDING_DIM = 1024
+EMBEDDING_DIM = 3072
 
 
 def upgrade() -> None:
@@ -160,11 +160,8 @@ def upgrade() -> None:
     )
     op.create_index("ix_feedback_message_id", "feedback", ["message_id"])
 
-    # ── IVFFlat ANN index ──────────────────────────────────────────────────────
-    op.execute(sa.text(
-        "CREATE INDEX IF NOT EXISTS ix_document_chunks_embedding_ivfflat "
-        "ON document_chunks USING ivfflat (embedding vector_cosine_ops) WITH (lists = 100)"
-    ))
+    # ANN index intentionally omitted here because EMBEDDING_DIM is 3072 and
+    # pgvector ANN indexes on `vector` require <= 2000 dimensions.
 
 
 def downgrade() -> None:

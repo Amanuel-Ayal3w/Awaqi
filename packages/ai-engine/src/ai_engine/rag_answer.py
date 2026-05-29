@@ -12,8 +12,9 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
+import threading
 from functools import partial
-from typing import Any
+from typing import Any, AsyncIterator
 
 from database.models.document import DocumentChunk
 
@@ -51,7 +52,8 @@ def chunks_to_citations(chunks: list[DocumentChunk]) -> list[dict[str, Any]]:
     out: list[dict[str, Any]] = []
     for ch in chunks[:8]:
         meta = ch.chunk_metadata if isinstance(ch.chunk_metadata, dict) else {}
-        title = (meta.get("document_title") or meta.get("source_url") or "Regulation")[:512]
+        source_url = meta.get("source_url") or None
+        title = (meta.get("document_title") or source_url or "Regulation")[:512]
         excerpt = (ch.content or "").strip()[:600]
         out.append(
             {
@@ -62,6 +64,7 @@ def chunks_to_citations(chunks: list[DocumentChunk]) -> list[dict[str, Any]]:
                 "proclamation_number": meta.get("proclamation_number") or None,
                 "article_number": meta.get("article_number") or None,
                 "enforcement_status": meta.get("enforcement_status", "in_effect"),
+                "source_url": source_url,
             }
         )
     return out
@@ -154,25 +157,184 @@ def _generate_gemini_sync(
     user_query: str, context: str, language: str, chunks: list[DocumentChunk]
 ) -> str:
     from google import genai
+    from google.genai import types
 
     api_key = os.getenv("GOOGLE_API_KEY")
     if not api_key:
         raise RuntimeError("GOOGLE_API_KEY missing")
-    model = os.getenv("GEMINI_CHAT_MODEL", "gemini-2.0-flash")
+    model = os.getenv("GEMINI_CHAT_MODEL", "gemini-3.5-flash")
     client = genai.Client(api_key=api_key)
 
     lang_hint = "am" if language == "am" else language or "en"
-    prompt = (
-        f"{_SYSTEM_PROMPT}\n\n"
+    user_content = (
         f"(Session language hint: {lang_hint})\n\n"
         f"CONTEXT:\n{context}\n\n"
         f"QUESTION:\n{user_query.strip()}"
     )
-    response = client.models.generate_content(model=model, contents=prompt)
-    text = (response.text or "").strip()
+
+    config = types.GenerateContentConfig(
+        system_instruction=_SYSTEM_PROMPT,
+        max_output_tokens=8192,
+        temperature=0.3,
+    )
+
+    response = client.models.generate_content(
+        model=model,
+        contents=user_content,
+        config=config,
+    )
+
+    try:
+        text = (response.text or "").strip()
+    except Exception as exc:
+        finish_reasons = (
+            [str(c.finish_reason) for c in response.candidates]
+            if response.candidates
+            else []
+        )
+        logger.warning(
+            "gemini_response_text_failed exc=%s finish_reasons=%s",
+            exc,
+            finish_reasons,
+        )
+        # Attempt to reconstruct from candidates directly
+        text = ""
+        if response.candidates:
+            parts = getattr(
+                getattr(response.candidates[0], "content", None), "parts", []
+            ) or []
+            text = "".join(
+                getattr(p, "text", "") for p in parts
+            ).strip()
+
     if not text:
+        logger.warning(
+            "gemini_empty_response query=%s", user_query[:120]
+        )
         return _extractive_answer(user_query, chunks)
     return text
+
+
+# ── Streaming generation ───────────────────────────────────────────────────────
+
+
+async def _generate_gemini_stream(
+    user_query: str, context: str, language: str
+) -> AsyncIterator[str]:
+    """
+    Async generator that yields text deltas as Gemini streams the response.
+    Bridges the synchronous google-genai streaming API to async via a Queue.
+    """
+    from google import genai
+    from google.genai import types
+
+    api_key = os.getenv("GOOGLE_API_KEY")
+    if not api_key:
+        raise RuntimeError("GOOGLE_API_KEY missing")
+
+    model = os.getenv("GEMINI_CHAT_MODEL", "gemini-3.5-flash")
+    client = genai.Client(api_key=api_key)
+
+    lang_hint = "am" if language == "am" else language or "en"
+    user_content = (
+        f"(Session language hint: {lang_hint})\n\n"
+        f"CONTEXT:\n{context}\n\n"
+        f"QUESTION:\n{user_query.strip()}"
+    )
+
+    config = types.GenerateContentConfig(
+        system_instruction=_SYSTEM_PROMPT,
+        max_output_tokens=8192,
+        temperature=0.3,
+    )
+
+    queue: asyncio.Queue[str | None] = asyncio.Queue(maxsize=256)
+    loop = asyncio.get_running_loop()
+
+    def _producer() -> None:
+        try:
+            for chunk in client.models.generate_content_stream(
+                model=model, contents=user_content, config=config
+            ):
+                text = getattr(chunk, "text", None) or ""
+                if text:
+                    asyncio.run_coroutine_threadsafe(queue.put(text), loop).result()
+        except Exception as exc:
+            logger.warning("gemini_stream_error exc=%s", exc)
+        finally:
+            asyncio.run_coroutine_threadsafe(queue.put(None), loop).result()
+
+    t = threading.Thread(target=_producer, daemon=True)
+    t.start()
+
+    while True:
+        item = await queue.get()
+        if item is None:
+            break
+        yield item
+
+
+async def answer_from_chunks_stream(
+    user_query: str,
+    chunks: list[DocumentChunk],
+    *,
+    language: str,
+) -> AsyncIterator[str | tuple]:
+    """
+    Async generator that first yields str text-delta chunks from Gemini,
+    then finally yields a single tuple:
+        (full_text, citations, confidence_score, follow_up_suggestions)
+    Call as:
+        async for item in answer_from_chunks_stream(...):
+            if isinstance(item, str):
+                # delta
+            else:
+                full_text, citations, confidence, follow_ups = item
+    """
+    citations = chunks_to_citations(chunks)
+    confidence = estimate_confidence(chunks)
+
+    if not chunks:
+        msg = (
+            "I could not find matching regulations in the knowledge base yet. "
+            "Try different wording or ask an admin to upload or scrape documents."
+        )
+        yield msg
+        yield (msg, [], 0.0, [])
+        return
+
+    context = _build_context_block(chunks)
+    lang = language or "en"
+
+    if not os.getenv("GOOGLE_API_KEY"):
+        text = _extractive_answer(user_query, chunks)
+        yield text
+        yield (text, citations, confidence, [])
+        return
+
+    full_parts: list[str] = []
+    try:
+        async for delta in _generate_gemini_stream(user_query, context, lang):
+            full_parts.append(delta)
+            yield delta
+    except Exception:
+        logger.exception("gemini_stream_failed falling back to extractive")
+        text = _extractive_answer(user_query, chunks)
+        yield text
+        yield (text, citations, confidence, [])
+        return
+
+    full_text = "".join(full_parts).strip() or _extractive_answer(user_query, chunks)
+
+    # Generate follow-ups after streaming (non-blocking, low priority)
+    try:
+        follow_ups = await asyncio.to_thread(
+            _generate_follow_ups_sync, user_query, full_text[:500], lang
+        )
+    except Exception:
+        follow_ups = []
+
+    yield (full_text, citations, confidence, follow_ups)
 
 
 # ── Confidence estimation ──────────────────────────────────────────────────────
@@ -197,7 +359,7 @@ def _generate_follow_ups_sync(
     api_key = os.getenv("GOOGLE_API_KEY")
     if not api_key:
         return []
-    model = os.getenv("GEMINI_CHAT_MODEL", "gemini-2.0-flash")
+    model = os.getenv("GEMINI_CHAT_MODEL", "gemini-3.5-flash")
     client = genai.Client(api_key=api_key)
     lang_hint = "Amharic" if language == "am" else "English"
     prompt = (

@@ -275,16 +275,52 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 
     session_id, token, lang = await session.get_or_create(chat_id)
 
+    # Send a "thinking" placeholder that we'll update with status events
+    thinking_msg = await message.reply_text(
+        formatters._esc("⏳ " + ("ውጤት እየፈለጉ ነው…" if lang == "am" else "Searching…")),
+        parse_mode=ParseMode.MARKDOWN_V2,
+    )
+    placeholder_id = thinking_msg.message_id
+
+    result = None
+    last_status: str = ""
+
     try:
-        result = await api_client.send_message(
+        async for event in api_client.stream_message(
             message=user_text,
             session_id=session_id,
             session_token=token,
             language=lang,
             telegram_chat_id=chat_id,
-        )
+        ):
+            if event.type == "status" and event.text != last_status:
+                last_status = event.text
+                try:
+                    await context.bot.edit_message_text(
+                        chat_id=chat_id,
+                        message_id=placeholder_id,
+                        text=formatters._esc("⏳ " + event.text),
+                        parse_mode=ParseMode.MARKDOWN_V2,
+                    )
+                except Exception:
+                    pass  # ignore edit failures (rate limit, identical text, etc.)
+
+            elif event.type == "done" and event.result is not None:
+                result = event.result
+
+            elif event.type == "error":
+                await context.bot.delete_message(chat_id=chat_id, message_id=placeholder_id)
+                await message.reply_text(
+                    formatters.format_error(lang), parse_mode=ParseMode.MARKDOWN_V2
+                )
+                return
+
     except api_client.AwagiAPIError as exc:
         logger.warning("api_error chat_id=%s status=%s", chat_id, exc.status_code)
+        try:
+            await context.bot.delete_message(chat_id=chat_id, message_id=placeholder_id)
+        except Exception:
+            pass
         if exc.status_code == 429:
             retry = _parse_retry(exc.detail)
             reply = formatters.format_rate_limit_error(retry, lang)
@@ -294,8 +330,26 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         return
     except Exception:
         logger.exception("unexpected_error chat_id=%s", chat_id)
+        try:
+            await context.bot.delete_message(chat_id=chat_id, message_id=placeholder_id)
+        except Exception:
+            pass
         await message.reply_text(formatters.format_error(lang), parse_mode=ParseMode.MARKDOWN_V2)
         return
+
+    if result is None:
+        try:
+            await context.bot.delete_message(chat_id=chat_id, message_id=placeholder_id)
+        except Exception:
+            pass
+        await message.reply_text(formatters.format_error(lang), parse_mode=ParseMode.MARKDOWN_V2)
+        return
+
+    # Delete placeholder and send the full formatted response
+    try:
+        await context.bot.delete_message(chat_id=chat_id, message_id=placeholder_id)
+    except Exception:
+        pass
 
     # Persist the fresh session_token for the next request
     if result.session_token:

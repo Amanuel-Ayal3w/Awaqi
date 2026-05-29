@@ -45,10 +45,8 @@ def upgrade() -> None:
         "document_chunks",
         sa.Column("embedding", Vector(TARGET_DIM), nullable=True),
     )
-    op.execute(
-        "CREATE INDEX IF NOT EXISTS ix_document_chunks_embedding_hnsw "
-        "ON document_chunks USING hnsw (embedding vector_cosine_ops)"
-    )
+    # pgvector ANN indexes on `vector` currently support up to 2000 dimensions.
+    # Keep native Gemini 3072-d vectors, but skip ANN index creation.
 
 
 def downgrade() -> None:

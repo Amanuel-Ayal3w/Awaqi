@@ -154,7 +154,7 @@ def _web_search_sync(query: str, *, model: str | None = None) -> WebSearchObserv
     from google import genai
     from google.genai import types
 
-    model_id = model or os.getenv("GEMINI_CHAT_MODEL", "gemini-2.0-flash")
+    model_id = model or os.getenv("GEMINI_CHAT_MODEL", "gemini-3.5-flash")
     client = genai.Client(api_key=api_key)
     config = types.GenerateContentConfig(
         tools=[types.Tool(google_search=types.GoogleSearch())],
