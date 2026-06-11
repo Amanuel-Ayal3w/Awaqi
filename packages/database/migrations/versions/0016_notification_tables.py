@@ -42,7 +42,6 @@ def upgrade() -> None:
             "doc_id",
             sa.dialects.postgresql.UUID(as_uuid=True),
             nullable=True,
-            index=True,
         ),
         sa.Column("doc_title", sa.String(512), nullable=True),
         sa.Column("channel", sa.String(8), nullable=False),

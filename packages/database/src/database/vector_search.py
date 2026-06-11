@@ -22,7 +22,8 @@ async def vector_search_chunk_ids(
     """
     Return chunk ids closest to ``embedding`` using cosine distance ``<=>``.
 
-    Requires ``embedding`` column populated (IVFFlat index optional).
+    The ordering casts to ``halfvec(3072)`` so it matches the hnsw index built on
+    the half-precision projection (plain ``vector`` is not indexable above 2000-d).
     """
     if not embedding:
         return []
@@ -32,7 +33,7 @@ async def vector_search_chunk_ids(
         SELECT id
         FROM document_chunks
         WHERE embedding IS NOT NULL
-        ORDER BY embedding <=> CAST(:emb AS vector)
+        ORDER BY embedding::halfvec(3072) <=> CAST(:emb AS halfvec(3072))
         LIMIT :lim
         """
     )
