@@ -45,6 +45,7 @@ def upgrade() -> None:
         "document_chunks",
         sa.Column("embedding", Vector(TARGET_DIM), nullable=True),
     )
+<<<<<<< HEAD
     # pgvector hnsw/ivfflat indexes support at most 2000 dimensions for the plain
     # ``vector`` type. At 3072-d we index the half-precision ``halfvec`` projection
     # (indexable up to 4000 dims); the query path casts to halfvec to match.
@@ -52,6 +53,10 @@ def upgrade() -> None:
         "CREATE INDEX IF NOT EXISTS ix_document_chunks_embedding_hnsw "
         "ON document_chunks USING hnsw ((embedding::halfvec(3072)) halfvec_cosine_ops)"
     )
+=======
+    # pgvector ANN indexes on `vector` currently support up to 2000 dimensions.
+    # Keep native Gemini 3072-d vectors, but skip ANN index creation.
+>>>>>>> d13fe7308c7c83ea1636dd767c75872e6a858582
 
 
 def downgrade() -> None:

@@ -129,7 +129,7 @@ mirror lives in `apps/web/types/api.ts`.
 | Var | Default | Notes |
 | --- | --- | --- |
 | `GOOGLE_API_KEY` | — | Required. Used for both the agent's Gemini calls and the `google_search` grounding tool. Without it Awaqi Max returns a clear "unavailable" message instead of crashing. |
-| `GEMINI_CHAT_MODEL` | `gemini-2.0-flash` | Same model used by Basic mode for consistency. |
+| `GEMINI_CHAT_MODEL` | `gemini-3.5-flash` | Same model used by Basic mode for consistency. |
 | `AWAQI_MAX_ITERATIONS` | `5` | Hard cap on tool-call iterations. |
 | `AWAQI_MAX_RAG_TOP_K` | `8` | Top-k chunks returned per `rag_search` call. |
 

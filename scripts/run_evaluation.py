@@ -34,8 +34,10 @@ DEFAULT_OUTPUT = REPO_ROOT / "data" / "evaluations" / "runs"
 
 
 async def _run_one(mode: str, assistant_mode: str, k: int, benchmark_path: Path,
-                   output_dir: Path, use_judge: bool, use_semantic_sim: bool) -> None:
+                   output_dir: Path, use_judge: bool, use_semantic_sim: bool,
+                   concurrency: int = 5) -> None:
     import json
+    import time
     with benchmark_path.open("r", encoding="utf-8") as fh:
         bench_doc = json.load(fh)
     bench_name = bench_doc.get("name", benchmark_path.stem)
@@ -45,6 +47,22 @@ async def _run_one(mode: str, assistant_mode: str, k: int, benchmark_path: Path,
         f"[eval] retrieval_mode={mode} assistant_mode={assistant_mode} k={k} "
         f"judge={use_judge} semantic_sim={use_semantic_sim}"
     )
+    run_started = time.perf_counter()
+
+    def _print_progress(idx: int, total: int, item: object) -> None:
+        elapsed = time.perf_counter() - run_started
+        item_id = getattr(item, "id", "unknown")
+        question = str(getattr(item, "question", "")).strip().replace("\n", " ")
+        preview = (question[:70] + "…") if len(question) > 70 else question
+        pct = (idx / total) * 100 if total else 100.0
+        avg = elapsed / idx if idx else 0.0
+        eta = avg * (total - idx)
+        print(
+            f"[eval] done {idx}/{total} ({pct:5.1f}%)  "
+            f"elapsed={elapsed:6.1f}s  avg={avg:.1f}s/item  eta={eta:.0f}s  "
+            f"id={item_id}  q={preview}"
+        )
+
     async with AsyncSessionLocal() as db:
         summary, results = await run_evaluation(
             db, items,
@@ -53,6 +71,8 @@ async def _run_one(mode: str, assistant_mode: str, k: int, benchmark_path: Path,
             k=k,
             use_judge=use_judge,
             use_semantic_sim=use_semantic_sim,
+            progress_callback=_print_progress,
+            concurrency=concurrency,
         )
     file_path = save_run(output_dir, summary, results, benchmark_name=bench_name)
     print(f"[eval] saved {file_path}")
@@ -107,6 +127,12 @@ def main() -> int:
         "--no-semantic-sim", action="store_true",
         help="Skip embedding-based semantic similarity.",
     )
+    parser.add_argument(
+        "--concurrency",
+        type=int,
+        default=5,
+        help="Number of benchmark items to evaluate in parallel (default: 5).",
+    )
     parser.add_argument("--verbose", action="store_true")
     args = parser.parse_args()
 
@@ -121,10 +147,15 @@ def main() -> int:
 
     modes = ["optimized", "dense_only", "bm25_only"] if args.mode == "all" else [args.mode]
     assistants = ["basic", "awaqi_max"] if args.assistant == "both" else [args.assistant]
-    for assistant in assistants:
-        for mode in modes:
-            asyncio.run(
-                _run_one(
+
+    # All runs MUST share one asyncio.run() call.  Each asyncio.run() creates
+    # and then destroys an event loop; asyncpg connection pools are bound to the
+    # loop they were created in, so a second asyncio.run() sees "Future attached
+    # to a different loop" errors when it tries to reuse those connections.
+    async def _run_all() -> None:
+        for assistant in assistants:
+            for mode in modes:
+                await _run_one(
                     mode=mode,
                     assistant_mode=assistant,
                     k=args.k,
@@ -132,8 +163,10 @@ def main() -> int:
                     output_dir=args.output_dir,
                     use_judge=not args.no_judge,
                     use_semantic_sim=not args.no_semantic_sim,
+                    concurrency=args.concurrency,
                 )
-            )
+
+    asyncio.run(_run_all())
     return 0
 
 

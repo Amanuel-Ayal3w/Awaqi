@@ -126,7 +126,7 @@ def judge_answer(
 
     from google import genai
 
-    model_id = model or os.getenv("GEMINI_JUDGE_MODEL", os.getenv("GEMINI_CHAT_MODEL", "gemini-2.0-flash"))
+    model_id = model or os.getenv("GEMINI_JUDGE_MODEL", os.getenv("GEMINI_CHAT_MODEL", "gemini-3.5-flash"))
     client = genai.Client(api_key=api_key)
     context_text = "\n\n".join(
         f"[{i}] {p.strip()[:1200]}" for i, p in enumerate(context_passages[:6], start=1)

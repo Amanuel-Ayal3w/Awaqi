@@ -74,6 +74,10 @@ const config: Config = {
                     from: { backgroundPosition: '0 0' },
                     to: { backgroundPosition: '-200% 0' },
                 },
+                blink: {
+                    '0%, 100%': { opacity: '1' },
+                    '50%': { opacity: '0' },
+                },
                 spotlight: {
                     "0%": {
                         opacity: "0",
@@ -90,6 +94,7 @@ const config: Config = {
                 'accordion-up': 'accordion-up 0.2s ease-out',
                 'shimmer': 'shimmer 2s linear infinite',
                 'spotlight': 'spotlight 2s ease .75s 1 forwards',
+                'blink': 'blink 1s step-end infinite',
             },
             backgroundImage: {
                 'gradient-radial': 'radial-gradient(var(--tw-gradient-stops))',

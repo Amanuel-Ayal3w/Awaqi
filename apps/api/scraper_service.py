@@ -18,6 +18,14 @@ from database.models.scraper import ScraperConfig, ScraperRun
 from sqlalchemy import select
 
 logger = logging.getLogger(__name__)
+SCRAPE_SOURCE_MOR_LAWS = "mor_laws"
+SCRAPE_SOURCE_ETHIODATA_TAX = "ethiodata_tax"
+SCRAPE_SOURCE_MOR_NEWS = "mor_news"
+ALL_SCRAPE_SOURCES = {
+    SCRAPE_SOURCE_MOR_LAWS,
+    SCRAPE_SOURCE_ETHIODATA_TAX,
+    SCRAPE_SOURCE_MOR_NEWS,
+}
 
 
 def _merge_stats(*all_stats: dict[str, int]) -> dict[str, int]:
@@ -153,6 +161,9 @@ async def execute_scrape_run(trigger: str) -> dict[str, int]:
     }
     error_message: str | None = None
     try:
+        mor_stats: dict[str, int] = {}
+        ethiodata_stats: dict[str, int] = {}
+        mor_news_stats: dict[str, int] = {}
         mor_stats = await WebScraper().scan_for_updates(
             seed_urls=settings.seed_urls,
             max_links=settings.max_links,
@@ -184,6 +195,7 @@ async def _execute_scrape_run_with_progress(
     seed_urls: list[str] | None,
     max_links: int | None,
     on_progress: Callable[[int, int, str], None] | None,
+    sources: list[str] | None = None,
 ) -> dict[str, int]:
     """Low-level: run cycle with optional progress callback + persist run record."""
     settings = await get_scraper_settings()
@@ -202,43 +214,83 @@ async def _execute_scrape_run_with_progress(
     effective_seeds = seed_urls if seed_urls is not None else settings.seed_urls
     effective_max = max_links if max_links is not None else settings.max_links
 
+    selected_sources = (
+        set(sources) & ALL_SCRAPE_SOURCES if sources is not None else set(ALL_SCRAPE_SOURCES)
+    )
+    if not selected_sources:
+        raise ValueError("At least one scrape source must be selected")
+
     stats: dict[str, int] = {"discovered": 0, "inserted": 0, "skipped": 0, "errors": 0}
     error_message: str | None = None
     try:
-        def _phase_progress(start: int, span: int, pct: int) -> int:
-            return start + int((pct / 100.0) * span)
+        selected_order = [
+            s
+            for s in (
+                SCRAPE_SOURCE_MOR_LAWS,
+                SCRAPE_SOURCE_ETHIODATA_TAX,
+                SCRAPE_SOURCE_MOR_NEWS,
+            )
+            if s in selected_sources
+        ]
+        phase_span = 100 // max(1, len(selected_order))
+        phase_offsets: dict[str, int] = {
+            source: idx * phase_span for idx, source in enumerate(selected_order)
+        }
 
-        def _mor_progress(cur: int, total: int, step: str) -> None:
+        def _phase_progress(source: str, cur: int, total: int, step: str) -> None:
             if on_progress is None:
                 return
-            pct = 0 if total <= 0 else int((cur / total) * 100)
-            on_progress(_phase_progress(0, 55, pct), 100, f"MoR laws: {step}")
+            offset = phase_offsets[source]
+            local_pct = 0 if total <= 0 else int((cur / total) * phase_span)
+            on_progress(min(99, offset + local_pct), 100, step)
 
-        def _ethiodata_progress(cur: int, total: int, step: str) -> None:
-            if on_progress is None:
-                return
-            pct = 0 if total <= 0 else int((cur / total) * 100)
-            on_progress(_phase_progress(55, 25, pct), 100, step)
+        mor_stats: dict[str, int] = {}
+        ethiodata_stats: dict[str, int] = {}
+        mor_news_stats: dict[str, int] = {}
 
-        def _mor_news_progress(cur: int, total: int, step: str) -> None:
-            if on_progress is None:
-                return
-            pct = 0 if total <= 0 else int((cur / total) * 100)
-            on_progress(_phase_progress(80, 20, pct), 100, step)
-
-        mor_stats = await run_mor_scrape_cycle(
-            seed_urls=effective_seeds,
-            max_links=effective_max,
-            on_progress=_mor_progress if on_progress is not None else None,
-        )
-        ethiodata_stats = await run_ethiodata_scrape_cycle(
-            max_articles=effective_max,
-            on_progress=_ethiodata_progress if on_progress is not None else None,
-        )
-        mor_news_stats = await run_mor_news_scrape_cycle(
-            max_links=effective_max,
-            on_progress=_mor_news_progress if on_progress is not None else None,
-        )
+        if SCRAPE_SOURCE_MOR_LAWS in selected_sources:
+            mor_stats = await run_mor_scrape_cycle(
+                seed_urls=effective_seeds,
+                max_links=effective_max,
+                on_progress=(
+                    (lambda cur, total, step: _phase_progress(
+                        SCRAPE_SOURCE_MOR_LAWS,
+                        cur,
+                        total,
+                        f"MoR laws: {step}",
+                    ))
+                    if on_progress is not None
+                    else None
+                ),
+            )
+        if SCRAPE_SOURCE_ETHIODATA_TAX in selected_sources:
+            ethiodata_stats = await run_ethiodata_scrape_cycle(
+                max_articles=effective_max,
+                on_progress=(
+                    (lambda cur, total, step: _phase_progress(
+                        SCRAPE_SOURCE_ETHIODATA_TAX,
+                        cur,
+                        total,
+                        f"EthioData tax: {step}",
+                    ))
+                    if on_progress is not None
+                    else None
+                ),
+            )
+        if SCRAPE_SOURCE_MOR_NEWS in selected_sources:
+            mor_news_stats = await run_mor_news_scrape_cycle(
+                max_links=effective_max,
+                on_progress=(
+                    (lambda cur, total, step: _phase_progress(
+                        SCRAPE_SOURCE_MOR_NEWS,
+                        cur,
+                        total,
+                        f"MoR news: {step}",
+                    ))
+                    if on_progress is not None
+                    else None
+                ),
+            )
         stats = _merge_stats(mor_stats, ethiodata_stats, mor_news_stats)
         run_status = "success"
     except Exception as e:

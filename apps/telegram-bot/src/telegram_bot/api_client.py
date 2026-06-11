@@ -1,13 +1,16 @@
 """
 HTTP client for the Awaqi FastAPI backend.
 
-Calls POST /v1/chat/send and returns a structured ChatResponse dataclass.
+Calls POST /v1/chat/stream (SSE) and returns a structured ChatResult.
+Falls back to POST /v1/chat/send if streaming is unavailable.
 Each Telegram user's chat_id is forwarded as X-Forwarded-For: telegram:{chat_id}
 so the API's Redis rate limiter gives each user an independent bucket
 (requires TRUST_X_FORWARDED_FOR=true + TRUSTED_PROXIES=127.0.0.1 on the API side).
 """
 
+import json
 import os
+from collections.abc import AsyncIterator
 from dataclasses import dataclass
 from typing import Optional
 
@@ -111,6 +114,120 @@ async def send_message(
         session_token=data.get("session_token"),
         detected_language=data.get("detected_language"),
     )
+
+
+@dataclass
+class StreamEvent:
+    type: str            # "status" | "delta" | "done" | "error"
+    text: str = ""
+    result: Optional["ChatResult"] = None
+
+
+async def stream_message(
+    *,
+    message: str,
+    session_id: str,
+    session_token: Optional[str],
+    language: str = "en",
+    taxpayer_category: Optional[str] = None,
+    telegram_chat_id: int,
+) -> AsyncIterator[StreamEvent]:
+    """
+    Stream a message via SSE (POST /v1/chat/stream).
+
+    Yields StreamEvent objects:
+      - type="status"  — tool-call progress text (awaqi_max only)
+      - type="delta"   — text chunk
+      - type="done"    — final, result is a ChatResult
+      - type="error"   — error detail in .text
+    """
+    headers: dict[str, str] = {
+        "Content-Type": "application/json",
+        "X-Channel": "telegram",
+        "X-Forwarded-For": f"telegram:{telegram_chat_id}",
+        "X-Telegram-Chat-Id": str(telegram_chat_id),
+    }
+    if session_token:
+        headers["X-Session-Token"] = session_token
+
+    payload: dict = {
+        "message": message,
+        "session_id": session_id,
+        "language": language,
+    }
+    if taxpayer_category:
+        payload["taxpayer_category"] = taxpayer_category
+
+    async with httpx.AsyncClient(timeout=REQUEST_TIMEOUT) as client:
+        async with client.stream(
+            "POST",
+            f"{API_BASE_URL}/v1/chat/stream",
+            json=payload,
+            headers=headers,
+        ) as resp:
+            if resp.status_code == 429:
+                body = await resp.aread()
+                try:
+                    detail = json.loads(body).get("detail", {})
+                except Exception:
+                    detail = {}
+                retry = detail.get("retry_after_seconds", 60) if isinstance(detail, dict) else 60
+                raise AwagiAPIError(429, f"Rate limit exceeded. Try again in {retry} seconds.")
+
+            if not resp.is_success:
+                body = await resp.aread()
+                try:
+                    detail = json.loads(body).get("detail", resp.text)
+                except Exception:
+                    detail = body.decode(errors="replace")
+                raise AwagiAPIError(resp.status_code, str(detail))
+
+            buffer = ""
+            async for raw_chunk in resp.aiter_text():
+                buffer += raw_chunk
+                lines = buffer.split("\n")
+                buffer = lines.pop()
+                for line in lines:
+                    if not line.startswith("data: "):
+                        continue
+                    try:
+                        event = json.loads(line[6:])
+                    except (json.JSONDecodeError, ValueError):
+                        continue
+
+                    etype = event.get("type", "")
+
+                    if etype == "delta":
+                        yield StreamEvent(type="delta", text=event.get("text", ""))
+
+                    elif etype == "status":
+                        yield StreamEvent(type="status", text=event.get("text", ""))
+
+                    elif etype == "done":
+                        citations = [
+                            Citation(
+                                source=c.get("source", ""),
+                                page=c.get("page", 1),
+                                text=c.get("text", ""),
+                                document_title=c.get("document_title"),
+                                proclamation_number=c.get("proclamation_number"),
+                                article_number=c.get("article_number"),
+                            )
+                            for c in event.get("citations", [])
+                        ]
+                        result = ChatResult(
+                            response_text=event["response_text"],
+                            citations=citations,
+                            confidence_score=event.get("confidence_score", 0.0),
+                            session_token=event.get("session_token"),
+                            detected_language=event.get("detected_language"),
+                        )
+                        yield StreamEvent(type="done", result=result)
+                        return
+
+                    elif etype == "error":
+                        yield StreamEvent(type="error", text=event.get("detail", "Unknown error"))
+                        return
 
 
 @dataclass

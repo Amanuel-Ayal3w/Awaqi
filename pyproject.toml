@@ -6,8 +6,11 @@ requires-python = ">=3.11"
 dependencies = [
     "ai-engine",
     "apscheduler>=3.11.2",
+    "bs4>=0.0.2",
     "dotenv>=0.9.9",
     "fastapi>=0.129.0",
+    "python-multipart>=0.0.22",
+    "rq>=2.9.0",
     "telethon>=1.43.2",
     "uvicorn>=0.40.0",
 ]

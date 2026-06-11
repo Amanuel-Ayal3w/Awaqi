@@ -6,19 +6,20 @@ import uuid
 from datetime import datetime, timedelta, timezone
 
 from ai_engine.ingest import ingest_bytes_for_document, ingest_plain_text
+from ai_engine.scraper.storage import delete_storage_file, save_document_file
 from ai_engine.thumbnail import generate_pdf_thumbnail, thumbnail_path_for_document
 from database import get_session, ping_redis
-from database.vector_store_admin import (
-    delete_all_document_chunks,
-    get_vector_store_stats,
-    wipe_vector_embeddings,
-)
 from database.models.auth import BaUser
 from database.models.customer import CuUser
 from database.models.document import Document, DocumentChunk
 from database.models.document import DocumentStatus as DocStatusEnum
 from database.models.document import EnforcementStatus as EnforcementStatusEnum
 from database.models.session import ChatSession, Message, MessageRole
+from database.vector_store_admin import (
+    delete_all_document_chunks,
+    get_vector_store_stats,
+    wipe_vector_embeddings,
+)
 from fastapi import (
     APIRouter,
     Body,
@@ -35,32 +36,20 @@ from sqlalchemy import func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from apps.api.deps import get_current_admin
+from apps.api.document_preview import (
+    build_content_preview,
+    get_document_or_404,
+    load_document_bytes,
+)
 from apps.api.queue.jobs.ingest_job import run_ingest_job
 from apps.api.queue.jobs.mor_scraper_job import run_mor_scrape_job
 from apps.api.queue.jobs.telegram_job import run_telegram_scrape_job
 from apps.api.queue.progress import publish_progress
 from apps.api.queue.queues import ingest_queue, scraper_queue
-from apps.api.document_preview import build_content_preview, get_document_or_404, load_document_bytes
-from apps.api.scraper_scheduler import apply_scheduler_config, get_next_run_time
-from apps.api.telegram_scheduler import apply_telegram_scheduler_config, get_telegram_next_run_time
-from apps.api.scraper_service import (
-    get_last_scraper_run,
-    get_scraper_settings,
-    list_scraper_runs,
-    update_scraper_settings,
-)
-from apps.api.telegram_service import (
-    get_telegram_settings,
-    clear_telegram_messages,
-    delete_telegram_message,
-    list_telegram_messages,
-    list_telegram_runs,
-    reingest_telegram_message,
-    update_telegram_settings,
-)
 from apps.api.schemas import (
     AdminAnalytics,
     AdminDocumentContentPreview,
+    AdminDocumentDeleteResult,
     AdminDocumentDetail,
     AdminDocumentItem,
     AdminDocumentList,
@@ -71,19 +60,17 @@ from apps.api.schemas import (
     AdminNotificationLogItem,
     AdminNotificationLogList,
     AdminNotificationTriggerResult,
-    ExtractedPagePreview,
-    AdminScrapeStats,
     AdminScraperConfig,
     AdminScraperConfigPatch,
     AdminScraperRunItem,
     AdminScraperRunList,
     AdminScraperStatus,
+    AdminScrapeStats,
+    AdminScrapeTriggerRequest,
     AdminSystemHealth,
-    AdminVectorStoreActionResult,
-    AdminVectorStoreStats,
+    AdminTelegramClearResult,
     AdminTelegramConfig,
     AdminTelegramConfigPatch,
-    AdminTelegramClearResult,
     AdminTelegramMessageItem,
     AdminTelegramMessageList,
     AdminTelegramRunItem,
@@ -92,11 +79,35 @@ from apps.api.schemas import (
     AdminUserItem,
     AdminUserList,
     AdminUserPatch,
+    AdminVectorStoreActionResult,
+    AdminVectorStoreStats,
     DocumentStatus,
     DocumentStatusCount,
+    ExtractedPagePreview,
     LogEntry,
     LogEntryList,
     TelegramScrapeRequest,
+)
+from apps.api.scraper_scheduler import apply_scheduler_config, get_next_run_time
+from apps.api.scraper_service import (
+    ALL_SCRAPE_SOURCES,
+    get_last_scraper_run,
+    get_scraper_settings,
+    list_scraper_runs,
+    update_scraper_settings,
+)
+from apps.api.telegram_scheduler import (
+    apply_telegram_scheduler_config,
+    get_telegram_next_run_time,
+)
+from apps.api.telegram_service import (
+    clear_telegram_messages,
+    delete_telegram_message,
+    get_telegram_settings,
+    list_telegram_messages,
+    list_telegram_runs,
+    reingest_telegram_message,
+    update_telegram_settings,
 )
 
 logger = logging.getLogger(__name__)
@@ -153,8 +164,23 @@ def _document_detail_from_row(
         **it.model_dump(),
         file_hash=doc.file_hash,
         registry_key=doc.registry_key,
-        storage_path=doc.storage_path,
     )
+
+
+async def _delete_document_full(db: AsyncSession, doc: Document) -> int:
+    """Delete document storage + chunks + document row; return deleted chunk count."""
+    chunk_count = int(
+        await db.scalar(
+            select(func.count()).select_from(DocumentChunk).where(DocumentChunk.document_id == doc.id)
+        )
+        or 0
+    )
+    delete_storage_file(doc.storage_path)
+    thumb_path = thumbnail_path_for_document(str(doc.id))
+    if thumb_path.is_file():
+        thumb_path.unlink(missing_ok=True)
+    await db.delete(doc)
+    return chunk_count
 
 
 def _role_value(user: BaUser) -> str:
@@ -204,6 +230,27 @@ def _guess_mime(filename: str | None, content_type: str | None) -> str:
     if fn.endswith(".docx"):
         return "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
     return "application/octet-stream"
+
+
+def _guess_extension(filename: str | None, mime_type: str) -> str:
+    fn = (filename or "").lower().strip()
+    if fn.endswith(".pdf"):
+        return "pdf"
+    if fn.endswith(".txt"):
+        return "txt"
+    if fn.endswith(".html") or fn.endswith(".htm"):
+        return "html"
+    if fn.endswith(".docx"):
+        return "docx"
+    if mime_type == "application/pdf":
+        return "pdf"
+    if mime_type == "text/plain":
+        return "txt"
+    if mime_type == "text/html":
+        return "html"
+    if mime_type == "application/vnd.openxmlformats-officedocument.wordprocessingml.document":
+        return "docx"
+    return "bin"
 
 
 async def _sha256_with_size_limit(file: UploadFile) -> str:
@@ -496,6 +543,35 @@ async def patch_admin_document(
     return _document_detail_from_row(d2, email, name)
 
 
+@router.delete("/admin/documents/{doc_id}", response_model=AdminDocumentDeleteResult)
+async def delete_admin_document(
+    doc_id: str,
+    current_user: BaUser = Depends(get_current_admin),
+    db: AsyncSession = Depends(get_session),
+):
+    _require_superadmin(current_user)
+    try:
+        uid = uuid.UUID(doc_id)
+    except ValueError:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="doc_id must be a valid UUID",
+        )
+
+    result = await db.execute(select(Document).where(Document.id == uid))
+    doc = result.scalar_one_or_none()
+    if doc is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Not found")
+
+    deleted_chunks = await _delete_document_full(db, doc)
+    await db.commit()
+    return AdminDocumentDeleteResult(
+        status="ok",
+        deleted_doc_id=doc_id,
+        deleted_chunks=deleted_chunks,
+    )
+
+
 @router.get("/admin/documents/{doc_id}/content", response_model=AdminDocumentContentPreview)
 async def get_admin_document_content(
     doc_id: str,
@@ -556,7 +632,6 @@ async def download_admin_document_file(
         )
 
     import httpx
-
     from ai_engine.scraper.mor_http import USER_AGENT, mor_http_verify
 
     async with httpx.AsyncClient(
@@ -746,10 +821,23 @@ def _run_to_item(run) -> AdminScraperRunItem:
 @router.post("/admin/scrape", response_model=AdminJobEnqueued)
 async def trigger_scrape(
     request: Request,
+    body: AdminScrapeTriggerRequest = Body(default_factory=AdminScrapeTriggerRequest),
     current_user: BaUser = Depends(get_current_admin),
 ):
     """Enqueue a MoR scrape cycle via Redis Queue and return the job_id immediately (AWA-11)."""
     _require_superadmin(current_user)
+    selected_sources = body.sources or sorted(ALL_SCRAPE_SOURCES)
+    invalid_sources = [s for s in selected_sources if s not in ALL_SCRAPE_SOURCES]
+    if invalid_sources:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Invalid scrape sources: {', '.join(invalid_sources)}",
+        )
+    if not selected_sources:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="At least one scrape source must be selected",
+        )
     job_id = str(uuid.uuid4())
     publish_progress(job_id, 0, "Queued", "queued")
     scraper_queue.enqueue(
@@ -758,12 +846,13 @@ async def trigger_scrape(
         "manual",
         None,
         None,
+        selected_sources,
         job_id=job_id,
     )
     return AdminJobEnqueued(
         job_id=job_id,
         status="queued",
-        message="MoR scrape job enqueued. Connect to /v1/progress/{job_id} for live progress.",
+        message="Scrape job enqueued. Connect to /v1/progress/{job_id} for live progress.",
     )
 
 
@@ -1250,6 +1339,8 @@ async def upload_document(
 
     pdf_bytes = await file.read()
     mime_type = _guess_mime(file.filename, file.content_type)
+    ext = _guess_extension(file.filename, mime_type)
+    doc.storage_path = save_document_file(doc.id, pdf_bytes, ext)
     doc_id = str(doc.id)
     await db.commit()
     await db.refresh(doc)
@@ -1327,8 +1418,8 @@ async def notification_config_get(
 ):
     """Return current notification configuration (scheduler, recipients, watermark)."""
     _require_superadmin(current_user)
-    from apps.api.notification_service import get_notification_settings
     from apps.api.notification_scheduler import get_notification_next_run_time
+    from apps.api.notification_service import get_notification_settings
 
     s = await get_notification_settings()
     return AdminNotificationConfig(
@@ -1350,11 +1441,11 @@ async def notification_config_patch(
 ):
     """Update notification configuration and reschedule the background job."""
     _require_superadmin(current_user)
-    from apps.api.notification_service import update_notification_settings
     from apps.api.notification_scheduler import (
         apply_notification_scheduler_config,
         get_notification_next_run_time,
     )
+    from apps.api.notification_service import update_notification_settings
 
     if body.interval_hours is not None and body.interval_hours < 1:
         raise HTTPException(status_code=400, detail="interval_hours must be >= 1")

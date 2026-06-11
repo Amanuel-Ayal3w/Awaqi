@@ -176,11 +176,14 @@ class DocumentChunk(Base):
         # hnsw caps plain ``vector`` indexes at 2000 dims; index the half-precision
         # projection instead (see migration 0015 and vector_search.py).
         Index(
+<<<<<<< HEAD
             "ix_document_chunks_embedding_hnsw",
             text(f"(embedding::halfvec({EMBEDDING_DIM})) halfvec_cosine_ops"),
             postgresql_using="hnsw",
         ),
         Index(
+=======
+>>>>>>> d13fe7308c7c83ea1636dd767c75872e6a858582
             "ix_document_chunks_content_trgm",
             "content",
             postgresql_using="gin",

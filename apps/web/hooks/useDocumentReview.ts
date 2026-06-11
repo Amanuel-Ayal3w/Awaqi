@@ -14,6 +14,7 @@ export function useDocumentReview(docId: string | undefined) {
     const [editorText, setEditorText] = useState("")
     const [ingestBusy, setIngestBusy] = useState(false)
     const [retryBusy, setRetryBusy] = useState(false)
+    const [deleteBusy, setDeleteBusy] = useState(false)
     const [error, setError] = useState<string | null>(null)
     const pdfUrlRef = useRef<string | null>(null)
     const loadGenRef = useRef(0)
@@ -144,6 +145,20 @@ export function useDocumentReview(docId: string | undefined) {
         }
     }, [docId, editorText, reloadAll])
 
+    const handleDeleteDocument = useCallback(async () => {
+        if (!docId) return
+        setDeleteBusy(true)
+        setError(null)
+        try {
+            await adminApi.deleteDocument(docId)
+        } catch (err: unknown) {
+            setError(err instanceof Error ? err.message : "Delete failed")
+            throw err
+        } finally {
+            setDeleteBusy(false)
+        }
+    }, [docId])
+
     const isDirty = editorText !== baselineText
     const status = (detail?.status ?? preview?.status ?? "").toLowerCase()
     const canRetry = preview?.has_stored_pdf ?? Boolean(detail?.storage_path?.trim())
@@ -163,6 +178,7 @@ export function useDocumentReview(docId: string | undefined) {
         setEditorText,
         ingestBusy,
         retryBusy,
+        deleteBusy,
         error,
         isDirty,
         status,
@@ -170,6 +186,7 @@ export function useDocumentReview(docId: string | undefined) {
         ocrPct,
         handleRetryOcr,
         handleIngestText,
+        handleDeleteDocument,
         reloadAll,
     }
 }

@@ -1,6 +1,7 @@
 "use client"
 
 import Link from "next/link"
+import { useRouter } from "next/navigation"
 import {
     AlertTriangle,
     ArrowLeft,
@@ -8,6 +9,7 @@ import {
     ExternalLink,
     FileText,
     Loader2,
+    Trash2,
     RefreshCw,
     Save,
     Sparkles,
@@ -184,6 +186,7 @@ function EditorPanel({
 }
 
 export function DocumentReviewWorkspace({ docId, locale, from }: DocumentReviewWorkspaceProps) {
+    const router = useRouter()
     const backHref = adminReviewBackPath(locale, from)
     const {
         detail,
@@ -196,6 +199,7 @@ export function DocumentReviewWorkspace({ docId, locale, from }: DocumentReviewW
         setEditorText,
         ingestBusy,
         retryBusy,
+        deleteBusy,
         error,
         isDirty,
         status,
@@ -203,11 +207,12 @@ export function DocumentReviewWorkspace({ docId, locale, from }: DocumentReviewW
         ocrPct,
         handleRetryOcr,
         handleIngestText,
+        handleDeleteDocument,
     } = useDocumentReview(docId)
 
     const title = detail?.title ?? preview?.title ?? "Document review"
     const needsReview = preview?.requires_manual_review ?? status === "requires_manual_review"
-    const actionsDisabled = ingestBusy || retryBusy || textLoading
+    const actionsDisabled = ingestBusy || retryBusy || deleteBusy || textLoading
     const amhMissing = !(preview?.tesseract_langs_installed ?? []).includes("amh")
     const textQualityBad = preview?.text_quality_warning ?? false
     const extractionModes = preview?.pages?.map((p) => p.extraction_mode) ?? []
@@ -418,6 +423,32 @@ export function DocumentReviewWorkspace({ docId, locale, from }: DocumentReviewW
                                 <Save className="mr-2 h-4 w-4" />
                             )}
                             Save &amp; index
+                        </Button>
+                        <Button
+                            variant="destructive"
+                            size="sm"
+                            disabled={actionsDisabled}
+                            onClick={() => {
+                                const confirmed = window.confirm(
+                                    "Delete this document and all indexed chunks? This cannot be undone."
+                                )
+                                if (!confirmed) return
+                                void (async () => {
+                                    try {
+                                        await handleDeleteDocument()
+                                        router.push(backHref)
+                                    } catch {
+                                        // Error is already surfaced by hook state.
+                                    }
+                                })()
+                            }}
+                        >
+                            {deleteBusy ? (
+                                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                            ) : (
+                                <Trash2 className="mr-2 h-4 w-4" />
+                            )}
+                            Delete document
                         </Button>
                     </div>
                 </div>

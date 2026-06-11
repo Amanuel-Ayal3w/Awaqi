@@ -17,15 +17,6 @@ export default function AdminTestChatPage() {
     return (
         <div className="flex flex-col gap-4">
             <div className="flex flex-wrap items-start justify-between gap-3 rounded-lg border bg-card p-4 text-sm">
-                <p className="max-w-xl text-muted-foreground">
-                    Uses <code className="rounded bg-muted px-1 py-0.5 text-xs">NEXT_PUBLIC_API_URL</code>{' '}
-                    and the same flows as customer chat (<code className="rounded bg-muted px-1 py-0.5 text-xs">POST /v1/chat/send</code>
-                    ). Session ID and guest tokens use the same browser storage keys as{' '}
-                    <code className="rounded bg-muted px-1 py-0.5 text-xs">
-                        /{locale}/chat
-                    </code>
-                    —start a new test session below to avoid clobbering another tab.
-                </p>
                 <Button type="button" variant="secondary" size="sm" onClick={newTestSession}>
                     New test session
                 </Button>

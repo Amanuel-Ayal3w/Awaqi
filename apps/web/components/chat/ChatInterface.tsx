@@ -85,8 +85,14 @@ export function ChatInterface() {
         }).catch(() => setIsLoggedIn(false));
     }, []);
 
+    const abortRef = useRef<(() => void) | null>(null);
+
     const handleSendMessage = async (content: string, attachments: Attachment[] = []) => {
         if (!content.trim() && attachments.length === 0) return;
+
+        // Cancel any in-flight stream
+        abortRef.current?.();
+        abortRef.current = null;
 
         // Strip follow-up chips from the previous last assistant message when a new message is sent
         setMessages((prev) =>
@@ -113,43 +119,100 @@ export function ChatInterface() {
             hasSavedTitleRef.current = true;
         }
 
-        try {
-            const token = getSessionToken(sessionIdRef.current);
-            const response = await chatApi.send({
+        const botId = (Date.now() + 1).toString();
+
+        // Optimistically add an empty assistant message that will be filled in
+        setMessages((prev) => [
+            ...prev,
+            { id: botId, role: 'assistant', content: '', isStreaming: true } as Message,
+        ]);
+
+        const token = getSessionToken(sessionIdRef.current);
+
+        const abort = chatApi.sendStream(
+            {
                 message: content,
                 session_id: sessionIdRef.current,
                 language: document.documentElement.lang ?? 'en',
                 mode,
-            }, token);
+            },
+            token,
+            (event) => {
+                if (event.type === 'delta') {
+                    setMessages((prev) =>
+                        prev.map((m) =>
+                            m.id === botId
+                                ? { ...m, content: m.content + event.text }
+                                : m
+                        )
+                    );
+                } else if (event.type === 'status') {
+                    // Show tool-call progress as italic placeholder while content is still empty
+                    setMessages((prev) =>
+                        prev.map((m) =>
+                            m.id === botId && m.content === ''
+                                ? { ...m, statusText: event.text }
+                                : m
+                        )
+                    );
+                } else if (event.type === 'done') {
+                    if (event.session_token) {
+                        setSessionToken(sessionIdRef.current, event.session_token);
+                    }
+                    setMessages((prev) =>
+                        prev.map((m) =>
+                            m.id === botId
+                                ? {
+                                      ...m,
+                                      content: event.response_text,
+                                      isStreaming: false,
+                                      statusText: undefined,
+                                      citations:
+                                          event.citations && event.citations.length > 0
+                                              ? event.citations
+                                              : undefined,
+                                      followUpSuggestions:
+                                          event.follow_up_suggestions &&
+                                          event.follow_up_suggestions.length > 0
+                                              ? event.follow_up_suggestions
+                                              : undefined,
+                                      confidenceScore:
+                                          typeof event.confidence_score === 'number'
+                                              ? event.confidence_score
+                                              : undefined,
+                                  }
+                                : m
+                        )
+                    );
+                    setIsLoading(false);
+                    abortRef.current = null;
+                } else if (event.type === 'error') {
+                    setMessages((prev) =>
+                        prev.map((m) =>
+                            m.id === botId
+                                ? { ...m, content: t('error'), isStreaming: false, statusText: undefined }
+                                : m
+                        )
+                    );
+                    setIsLoading(false);
+                    abortRef.current = null;
+                }
+            },
+            () => {
+                // network / fetch error
+                setMessages((prev) =>
+                    prev.map((m) =>
+                        m.id === botId
+                            ? { ...m, content: t('error'), isStreaming: false, statusText: undefined }
+                            : m
+                    )
+                );
+                setIsLoading(false);
+                abortRef.current = null;
+            },
+        );
 
-            if (response.session_token) {
-                setSessionToken(sessionIdRef.current, response.session_token);
-            }
-
-            const botMessage: Message = {
-                id: (Date.now() + 1).toString(),
-                role: 'assistant',
-                content: response.response_text,
-                citations:
-                    response.citations && response.citations.length > 0
-                        ? response.citations
-                        : undefined,
-                followUpSuggestions:
-                    response.follow_up_suggestions && response.follow_up_suggestions.length > 0
-                        ? response.follow_up_suggestions
-                        : undefined,
-            };
-            setMessages((prev) => [...prev, botMessage]);
-        } catch {
-            const errorMessage: Message = {
-                id: (Date.now() + 1).toString(),
-                role: 'assistant',
-                content: t('error'),
-            };
-            setMessages((prev) => [...prev, errorMessage]);
-        } finally {
-            setIsLoading(false);
-        }
+        abortRef.current = abort;
     };
 
     const handleFollowUpClick = (text: string) => {

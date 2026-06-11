@@ -4,6 +4,7 @@ import { customerAuthClient } from "@/lib/customer-auth-client";
 import type {
     AdminAnalytics,
     AdminDocumentContentPreview,
+    AdminDocumentDeleteResult,
     AdminDocumentDetail,
     AdminDocumentList,
     AdminJobEnqueued,
@@ -12,6 +13,7 @@ import type {
     AdminScraperConfigPatch,
     AdminScraperRunList,
     AdminScraperStatus,
+    ScrapeSource,
     AdminSystemHealth,
     AdminVectorStoreActionResult,
     AdminVectorStoreStats,
@@ -82,6 +84,14 @@ apiClient.interceptors.response.use(
     }
 );
 
+// ── Streaming SSE event types ─────────────────────────────────────────────────
+
+export type StreamEvent =
+    | { type: "status"; text: string }
+    | { type: "delta"; text: string }
+    | { type: "done" } & ChatResponse
+    | { type: "error"; detail: string };
+
 // ── Chat API ──────────────────────────────────────────────────────────────────
 
 export const chatApi = {
@@ -92,6 +102,87 @@ export const chatApi = {
         }
         const { data } = await apiClient.post<ChatResponse>("/v1/chat/send", payload, { headers });
         return data;
+    },
+
+    /**
+     * Stream a chat message via SSE. Calls `onEvent` for each event.
+     * Returns a cleanup function (aborts the fetch).
+     */
+    sendStream: (
+        payload: ChatRequest,
+        sessionToken: string | null | undefined,
+        onEvent: (event: StreamEvent) => void,
+        onError?: (err: Error) => void,
+    ): (() => void) => {
+        const controller = new AbortController();
+
+        (async () => {
+            try {
+                const headers: Record<string, string> = {
+                    "Content-Type": "application/json",
+                };
+                if (sessionToken) {
+                    headers["X-Session-Token"] = sessionToken;
+                }
+
+                // Attach auth header the same way the axios interceptor does
+                try {
+                    const { data } = await (
+                        payload.mode === "awaqi_max"
+                            ? import("@/lib/customer-auth-client").then((m) => m.customerAuthClient.getSession())
+                            : import("@/lib/customer-auth-client").then((m) => m.customerAuthClient.getSession())
+                    );
+                    if ((data as { session?: { token?: string } })?.session?.token) {
+                        headers["Authorization"] = `Bearer ${(data as { session: { token: string } }).session.token}`;
+                    }
+                } catch {
+                    // no auth token — continue as guest
+                }
+
+                const base = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
+                const res = await fetch(`${base}/v1/chat/stream`, {
+                    method: "POST",
+                    headers,
+                    body: JSON.stringify(payload),
+                    signal: controller.signal,
+                });
+
+                if (!res.ok || !res.body) {
+                    onError?.(new Error(`HTTP ${res.status}`));
+                    return;
+                }
+
+                const reader = res.body.getReader();
+                const decoder = new TextDecoder();
+                let buffer = "";
+
+                while (true) {
+                    const { done, value } = await reader.read();
+                    if (done) break;
+                    buffer += decoder.decode(value, { stream: true });
+
+                    const lines = buffer.split("\n");
+                    buffer = lines.pop() ?? "";
+
+                    for (const line of lines) {
+                        if (line.startsWith("data: ")) {
+                            try {
+                                const event = JSON.parse(line.slice(6)) as StreamEvent;
+                                onEvent(event);
+                            } catch {
+                                // skip malformed line
+                            }
+                        }
+                    }
+                }
+            } catch (err) {
+                if ((err as Error).name !== "AbortError") {
+                    onError?.(err as Error);
+                }
+            }
+        })();
+
+        return () => controller.abort();
     },
 
     getHistory: async (sessionId: string, sessionToken?: string | null): Promise<ChatMessage[]> => {
@@ -192,8 +283,9 @@ export const adminApi = {
         return data;
     },
 
-    triggerScrape: async (): Promise<AdminJobEnqueued> => {
-        const { data } = await apiClient.post<AdminJobEnqueued>("/v1/admin/scrape");
+    triggerScrape: async (sources?: ScrapeSource[]): Promise<AdminJobEnqueued> => {
+        const body = sources && sources.length > 0 ? { sources } : {};
+        const { data } = await apiClient.post<AdminJobEnqueued>("/v1/admin/scrape", body);
         return data;
     },
 
@@ -330,6 +422,13 @@ export const adminApi = {
         const { data } = await apiClient.patch<AdminDocumentDetail>(
             `/v1/admin/documents/${docId}`,
             body
+        );
+        return data;
+    },
+
+    deleteDocument: async (docId: string): Promise<AdminDocumentDeleteResult> => {
+        const { data } = await apiClient.delete<AdminDocumentDeleteResult>(
+            `/v1/admin/documents/${docId}`
         );
         return data;
     },

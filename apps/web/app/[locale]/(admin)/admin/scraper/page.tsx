@@ -12,6 +12,7 @@ import type {
     AdminScraperConfig,
     AdminScraperRunItem,
     AdminScraperStatus,
+    ScrapeSource,
 } from "@/types/api"
 import { JobProgress } from "@/components/ui/job-progress"
 import { DataTable } from "@/components/ui/data-table"
@@ -35,6 +36,23 @@ type RunStatusFilter = "all" | "success" | "running" | "failed"
 type ScrapedDocumentRow = AdminDocumentItem
 
 const STAT_KEYS = ["discovered", "inserted", "skipped", "errors"] as const
+const SCRAPE_SOURCE_OPTIONS: Array<{ id: ScrapeSource; label: string; hint: string }> = [
+    {
+        id: "mor_laws",
+        label: "MoR laws",
+        hint: "Current MoR proclamation/regulation/directive API sources",
+    },
+    {
+        id: "ethiodata_tax",
+        label: "EthioData tax",
+        hint: "Tax tag pages + digest + linked PDF",
+    },
+    {
+        id: "mor_news",
+        label: "MoR newspaper/magazine",
+        hint: "PDF links from /news-paper and /magazine pages",
+    },
+]
 
 export default function AdminScraperPage() {
     const router = useRouter()
@@ -61,6 +79,9 @@ export default function AdminScraperPage() {
     const [docStatusFilter, setDocStatusFilter] = useState<DocStatusFilter>("all")
     const [docSearch, setDocSearch] = useState("")
     const [runStatusFilter, setRunStatusFilter] = useState<RunStatusFilter>("all")
+    const [selectedSources, setSelectedSources] = useState<ScrapeSource[]>(
+        SCRAPE_SOURCE_OPTIONS.map((s) => s.id)
+    )
 
     const appendShellLine = useCallback((line: string) => {
         const timestamp = new Date().toLocaleTimeString()
@@ -128,12 +149,17 @@ export default function AdminScraperPage() {
     )
 
     const handleTriggerScrape = async () => {
+        if (selectedSources.length === 0) {
+            setError("Select at least one source before triggering scrape.")
+            return
+        }
         setIsScraping(true)
         setError(null)
         appendShellLine("$ POST /v1/admin/scrape")
+        appendShellLine(`[info] Sources: ${selectedSources.join(", ")}`)
         appendShellLine("[info] Enqueuing scrape job...")
         try {
-            const result = await adminApi.triggerScrape()
+            const result = await adminApi.triggerScrape(selectedSources)
             setScrapeJobId(result.job_id)
             appendShellLine(`[ok] Job enqueued: ${result.job_id.slice(0, 8)}…`)
             appendShellLine("[live] Watching progress via Redis SSE…")
@@ -444,19 +470,60 @@ export default function AdminScraperPage() {
                 <CardContent>
                     <div className="rounded-md border border-zinc-800 bg-zinc-950 p-3 font-mono text-xs text-emerald-300">
                         <div className="mb-3 flex items-center justify-start">
-                            <Button
-                                size="sm"
-                                className="gap-2"
-                                onClick={() => void handleTriggerScrape()}
-                                disabled={isScraping}
-                            >
-                                {isScraping ? (
-                                    <Loader2 className="h-4 w-4 animate-spin" />
-                                ) : (
-                                    <Play className="h-4 w-4" />
-                                )}
-                                Trigger scraper
-                            </Button>
+                            <div className="w-full space-y-3">
+                                <div className="grid gap-2 sm:grid-cols-3">
+                                    {SCRAPE_SOURCE_OPTIONS.map((source) => {
+                                        const checked = selectedSources.includes(source.id)
+                                        return (
+                                            <label
+                                                key={source.id}
+                                                className="flex cursor-pointer items-start gap-2 rounded border border-zinc-700 bg-zinc-900 p-2 text-zinc-100"
+                                            >
+                                                <input
+                                                    type="checkbox"
+                                                    className="mt-0.5"
+                                                    checked={checked}
+                                                    disabled={isScraping}
+                                                    onChange={(e) => {
+                                                        if (e.target.checked) {
+                                                            setSelectedSources((prev) =>
+                                                                prev.includes(source.id)
+                                                                    ? prev
+                                                                    : [...prev, source.id]
+                                                            )
+                                                            return
+                                                        }
+                                                        setSelectedSources((prev) =>
+                                                            prev.filter((v) => v !== source.id)
+                                                        )
+                                                    }}
+                                                />
+                                                <span>
+                                                    <span className="block text-xs font-medium">
+                                                        {source.label}
+                                                    </span>
+                                                    <span className="block text-[10px] text-zinc-400">
+                                                        {source.hint}
+                                                    </span>
+                                                </span>
+                                            </label>
+                                        )
+                                    })}
+                                </div>
+                                <Button
+                                    size="sm"
+                                    className="gap-2"
+                                    onClick={() => void handleTriggerScrape()}
+                                    disabled={isScraping || selectedSources.length === 0}
+                                >
+                                    {isScraping ? (
+                                        <Loader2 className="h-4 w-4 animate-spin" />
+                                    ) : (
+                                        <Play className="h-4 w-4" />
+                                    )}
+                                    Trigger scraper
+                                </Button>
+                            </div>
                         </div>
                         <div
                             ref={shellRef}
